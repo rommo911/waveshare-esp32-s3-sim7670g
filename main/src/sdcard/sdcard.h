@@ -14,4 +14,6 @@ namespace sdcard
     bool setupSdcard();
     
     bool shutdownSdcard();
+
+    bool checkForupdatefromSD();
 }

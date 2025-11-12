@@ -629,7 +629,7 @@ namespace fs
     {
       FSsource = FServerSource::LittleFS;
       Serial.println("Using littlefs as filesystem for web server.");
-      if (!LittleFS.begin(false, "/littlefs", 10))
+      if (!LittleFS.begin(false, "/littlefs", 10,"storage"))
       {
         Serial.println("ERROR on mounting filesystem.");
         return false;
