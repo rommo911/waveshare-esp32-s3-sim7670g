@@ -815,13 +815,6 @@ uint8_t mpu6500_wom_init(mpu6500_interface_t interface, mpu6500_address_t addr_p
 {
     uint8_t res;
     uint8_t reg;
-    int32_t gyro_offset_raw[3];
-    int32_t accel_offset_raw[3];
-    int32_t gyro_offset[3];
-    int32_t accel_offset[3];
-    int8_t gyro_orientation[9] = {1, 0, 0,
-                                  0, 1, 0,
-                                  0, 0, 1};
 
     /* link interface function */
     DRIVER_MPU6500_LINK_INIT(&gs_handle, mpu6500_handle_t);

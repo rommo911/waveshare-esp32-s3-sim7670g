@@ -1,0 +1,54 @@
+name: CI-build
+
+on:
+  push:
+    branches:
+      - master
+      - main
+      - dev
+      - feature/*
+      - bugfix/*
+  pull_request:
+    branches:
+      - master
+      - main
+      - dev
+      - feature/*
+      - bugfix/*
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        esp_idf_version: [v5.5.1]
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Cache ESP-IDF dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.espressif/
+          key: ${{ runner.os }}-esp-idf-${{ matrix.esp_idf_version }}-deps
+
+      - name: Build firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ matrix.esp_idf_version }}
+          target: esp32s3
+          extra_docker_args: "-v ~/.espressif:/root/.espressif"
+
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.esp_idf_version }}
+          path: |
+            build/*.bin

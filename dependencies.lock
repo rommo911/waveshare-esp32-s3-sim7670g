@@ -1,10 +1,4 @@
 dependencies:
-  Adafruit_BusIO:
-    dependencies: []
-    source:
-      path: C:\Users\User\Documents\projects\esp32s34g\main\lib\Adafruit_BusIO
-      type: local
-    version: '*'
   Adafruit_MAX1704X:
     dependencies: []
     source:
@@ -17,12 +11,6 @@ dependencies:
       path: C:\Users\User\Documents\projects\esp32s34g\main\lib\Adafruit_NeoPixel
       type: local
     version: '*'
-  ArduinoJson:
-    dependencies: []
-    source:
-      path: C:\Users\User\Documents\projects\esp32s34g\main\lib\ArduinoJson
-      type: local
-    version: 7.3.1
   MqttLogger:
     dependencies: []
     source:
@@ -35,6 +23,19 @@ dependencies:
       path: C:\Users\User\Documents\projects\esp32s34g\main\lib\TinyGSM
       type: local
     version: '*'
+  adafruit/Adafruit_BusIO:
+    dependencies: []
+    source:
+      path: C:\Users\User\Documents\projects\esp32s34g\main\lib\Adafruit_BusIO
+      type: local
+    version: '*'
+  bblanchon/ArduinoJson:
+    component_hash: b1c2f0b0bc26969af19809cee80b220fb882481d59cc75f8e79ebceecdc69f06
+    dependencies: []
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 7.4.2
   chmorgan/esp-libhelix-mp3:
     component_hash: cbb76089dc2c5749f7b470e2e70aedc44c9da519e04eb9a67d4c7ec275229e53
     dependencies:
@@ -233,7 +234,7 @@ dependencies:
       type: service
     version: 0.0.11
   espressif/esp-sr:
-    component_hash: ec3bf2c0d8acaeb1fd6e6046955436a36261a46679cab5a8d356c81b45faf9ce
+    component_hash: 5b74c65141295241e42a18d587abf28b3d438b62560e90168e829c36d751f45a
     dependencies:
     - name: espressif/dl_fft
       registry_url: https://components.espressif.com
@@ -249,7 +250,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 2.2.0
+    version: 2.2.1
   espressif/esp-zboss-lib:
     component_hash: 321883d142421f65009972408287441794250057668a11abbdfd8bec77c3309a
     dependencies:
@@ -502,30 +503,30 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 1.20.2
+  knolleary/pubsubclient:
+    dependencies: []
+    source:
+      path: C:\Users\User\Documents\projects\esp32s34g\main\lib\pubsubclient
+      type: local
+    version: '*'
   mpu6500:
     dependencies: []
     source:
       path: C:\Users\User\Documents\projects\esp32s34g\main\lib\mpu6500
       type: local
     version: '*'
-  pubsubclient:
-    dependencies: []
-    source:
-      path: C:\Users\User\Documents\projects\esp32s34g\main\lib\pubsubclient
-      type: local
-    version: '*'
 direct_dependencies:
-- Adafruit_BusIO
 - Adafruit_MAX1704X
 - Adafruit_NeoPixel
-- ArduinoJson
 - MqttLogger
 - TinyGSM
+- adafruit/Adafruit_BusIO
+- bblanchon/ArduinoJson
 - esp-fs-webserver
 - espressif/arduino-esp32
 - espressif/esp_modem
+- knolleary/pubsubclient
 - mpu6500
-- pubsubclient
-manifest_hash: 6b9aa164085b0963d479198e60af6858322b05f324590a554b77f5b116624933
+manifest_hash: 87e9af8440524de8e16a2fd12e89d0070292f53f887936a896c055f2ad3bcbb9
 target: esp32s3
 version: 2.0.0

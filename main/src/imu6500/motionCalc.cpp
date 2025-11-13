@@ -8,7 +8,7 @@ static float energy_buf[ENERGY_BUF_LEN];
 static int energy_idx = 0;
 static int energy_count = 0;
 
-Biquad_t bp_filter = {0};
+Biquad_t bp_filter = {};
 
 // ----------------- Helper functions -----------------
 

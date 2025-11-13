@@ -165,7 +165,6 @@ namespace imu6500_dmp
       xSemaphoreGive(imuDataSemaphore);
     }
     LoadImuPreferences();
-    uint8_t counter = 0;
     /*Verify connection*/
     ImuMode = mode;
     Serial.println(F("starting MPU6050 connection..."));
@@ -344,7 +343,7 @@ namespace imu6500_dmp
       calibrationDebounce = 0;
       MPU_DMP_DATA_READY = false;
       MPU_MTION_Interrupt = false;
-      float sx = 0.f, sy = 0.f, sz = 0.f, sroll = 0.0f, syaw = 0.0f, spitch = 0.0f;
+      float sx = 0.f, sy = 0.f, sz = 0.f;
       float syaw_sin = 0.0f, syaw_cos = 0.0f;
       float sroll_sin = 0.0f, sroll_cos = 0.0f;
       float spitch_sin = 0.0f, spitch_cos = 0.0f;
@@ -363,7 +362,6 @@ namespace imu6500_dmp
           Serial.printf("Baseline calibrate FAILED \n\r");
           return false;
         }
-        motion_t data;
         while (!MPU_DMP_DATA_READY)
         {
           delay(30);
@@ -465,8 +463,6 @@ namespace imu6500_dmp
           rotate_accel_world(qf, globalmotiondata.accel_g[i], a_world);
           float a_lin[3] = {fabs(a_world[0]), fabs(a_world[1]), fabs(a_world[2] - 1.0f)};
           // magnitude of linear accel (g)
-          float mag = sqrtf((a_lin[0] * a_lin[0]) + (a_lin[1] * a_lin[1]) /*+ (a_lin[2] * a_lin[2])*/);
-
           /*dax = fabs(globalmotiondata.accel_g[i][0] - baseline.ax);
           day = fabs(globalmotiondata.accel_g[i][1] - baseline.ay);
           daz = fabs(globalmotiondata.accel_g[i][2] - baseline.az);*/

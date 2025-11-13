@@ -17,7 +17,14 @@
     "--compile-commands-dir=${workspaceFolder}\\build"
   ],
   "idf.flashType": "UART",
-  "idf.portWin": "COM10",
+  "idf.launchMonitorOnDebugSession": true,
+  "idf.enableCCache": true,
+  "idf.flashPartitionToUse": "app",
+  "idf.monitorNoReset": true,
+  "idf.monitorEnableTimestamps": true,
+  "idf.qemuDebugMonitor": false,
+  "idf.showOnboardingOnInit": false,
+  "idf.telemetry": false,
   "files.associations": {
     "fstream": "cpp",
     "chrono": "cpp",
