@@ -45,7 +45,7 @@ namespace modem
 #else
     TinyGsm modem7600g(Serial1);
 #endif
-    //TinyGsmClientSecure secureClient(modem7670g., 0);
+    // TinyGsmClientSecure secureClient(modem7670g., 0);
     bool gps_enabled = false;
     bool gprs_enabled = false;
     bool modem_enabled = false;
@@ -303,7 +303,7 @@ namespace modem
         return true;
     }
 
-    bool initModem7080()
+    bool initModem()
     {
         Serial.println("Initializing modem7670g...");
         // Modem 2700~3400mV VDD
@@ -311,12 +311,8 @@ namespace modem
         // power::getPMU().enableDC3();
         Serial1.begin(115200, SERIAL_8N1, BOARD_MODEM_RXD_PIN, BOARD_MODEM_TXD_PIN);
         pinMode(BOARD_MODEM_PWR_PIN, OUTPUT);
-        /*digitalWrite(BOARD_MODEM_PWR_PIN, LOW);
-        delay(100);
         digitalWrite(BOARD_MODEM_PWR_PIN, HIGH);
         delay(1000);
-        digitalWrite(BOARD_MODEM_PWR_PIN, LOW);*/
-
         pinMode(BOARD_MODEM_DTR_PIN, OUTPUT);
         pinMode(BOARD_MODEM_RI_PIN, INPUT);
         int failCount = 0;
@@ -332,8 +328,7 @@ namespace modem
                 digitalWrite(BOARD_MODEM_PWR_PIN, LOW);
                 delay(100);
                 digitalWrite(BOARD_MODEM_PWR_PIN, HIGH);
-                delay(1000);
-                digitalWrite(BOARD_MODEM_PWR_PIN, LOW);
+                delay(5000);
                 modem7670g.sendAT("+CRESET");
                 retry = 0;
             }
@@ -425,8 +420,8 @@ namespace modem
             modem7670g.sendAT("+CRESET");
             Serial1.end();
         }
-        // power::getPMU().disableDC3();   // disable modem power
-        // power::getPMU().disableBLDO2(); // disable GPS power
+        pinMode(BOARD_MODEM_PWR_PIN, OUTPUT);
+        digitalWrite(BOARD_MODEM_PWR_PIN, LOW);
         return true;
     }
 

@@ -20,6 +20,7 @@ idf_component_register(SRC_DIRS
                                 "./src/web_server"
                                 "./src/wifi"
                                 "./src"
-                    PRIV_REQUIRES esp_wifi nvs_flash
+                    PRIV_REQUIRES esp_wifi esp_http_client app_update nvs_flash esp_driver_gpio esp_netif
                     REQUIRES arduino-esp32 )
+                    
 littlefs_create_partition_image(storage ../data FLASH_IN_PROJECT)

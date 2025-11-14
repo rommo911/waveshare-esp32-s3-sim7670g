@@ -57,7 +57,6 @@ static uint32_t lerp(const uint32_t &a, const uint32_t &b, float t) {
 void loop_led(void *arg) {
   (void)arg;
   const TickType_t delayTicks = pdMS_TO_TICKS(50);
-  Serial.println("entering loop_led");
   while (1) {
     bool any_change = false;
     xEventGroupWaitBits(ledgroup, 1, pdTRUE, pdTRUE, pdMS_TO_TICKS(30));
@@ -149,7 +148,6 @@ void loop_led(void *arg) {
         strip.setPixelColor(i, (leds[i]));
       }
       strip.show();
-      Serial.println("led updated !!!!!!!!!!!!!");
     }
     vTaskDelay(delayTicks);
   }
@@ -166,7 +164,6 @@ void led_init() {
   strip.show();
   ledgroup = xEventGroupCreate();
   xTaskCreate(loop_led, "led_worker", 4096, NULL, 1, &workerTask);
-  Serial.printf("fast_led_init 5 \n");
 }
 
 // New separated implementations

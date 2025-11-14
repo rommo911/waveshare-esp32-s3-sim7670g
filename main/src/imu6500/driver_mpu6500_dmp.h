@@ -60,7 +60,7 @@ extern "C"
 #define MPU6500_DMP_DEFAULT_CYCLE_WAKE_UP MPU6500_BOOL_FALSE                                      /**< disable cycle wake up */
 #define MPU6500_DMP_DEFAULT_CYCLE_WAKE_UP_LOW_PWER MPU6500_BOOL_FALSE                             /**< disable cycle wake up */
 #define MPU6500_DMP_DEFAULT_LOW_POWER_ACCEL_OUTPUT_RATE MPU6500_LOW_POWER_ACCEL_OUTPUT_RATE_3P91  /**< 3.91Hz */
-#define MPU6500_DMP_DEFAULT_INTERRUPT_PIN_LEVEL MPU6500_PIN_LEVEL_LOW                             /**< low level */
+#define MPU6500_DMP_DEFAULT_INTERRUPT_PIN_LEVEL MPU6500_PIN_LEVEL_HIGH                             /**< low level */
 #define MPU6500_DMP_DEFAULT_INTERRUPT_PIN_TYPE MPU6500_PIN_TYPE_OPEN_DRAIN                        /**< push pull */
 #define MPU6500_DMP_DEFAULT_INTERRUPT_MOTION MPU6500_BOOL_TRUE                                    /**< enable motion */
 #define MPU6500_DMP_DEFAULT_INTERRUPT_FIFO_OVERFLOW MPU6500_BOOL_FALSE                            /**< enable fifo overflow */

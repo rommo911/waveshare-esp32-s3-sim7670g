@@ -18,5 +18,11 @@ uint32_t getNoMotionTimeout();
 
 uint32_t getSecureModeTimeout();
 
+uint64_t getSnapShotTime();
+
+void checkOTA_rollback(void *arg);
+
+extern uint32_t OTA_VALIDATION_COUNTER;
+extern bool OTA_VALIDATION;
 
 #endif // MAIN_H_

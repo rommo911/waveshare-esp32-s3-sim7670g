@@ -7,68 +7,71 @@
  *
  */
 
-#include <Arduino.h>
+#include "main.hpp"
 #include "pins.hpp"
 #include "wifi/wifi.hpp"
 #include "power/power.hpp"
 #include "driver/rtc_io.h"
-
 #include <atomic>
 
 namespace power
 {
-    float cellVoltage = 0.0f;
-    esp_sleep_wakeup_cause_t wakeup_reason;
-    float rate = 0.0f;
-    std::atomic<bool> isCharging;
+    static const uint8_t BATTERY_LOW_THRESH = 15;
+    static const uint8_t BATTERY_CRITICAL_THRESH = 10;
     std::atomic<bool> isBatteryLowLevel;
     std::atomic<bool> isBatteryCriticalLevel;
+    std::atomic<bool> isCharging;
     std::atomic<bool> isPekeyShortPressed;
 
     uint64_t VbusInsertTimestamp = 0;
     uint64_t VbusRemovedTimestamp = 0;
 
-    void loopPower(void *arg);
+    float cellVoltage = 0.0f, percent = 0.0f, rate = 0.0f;
+    esp_sleep_wakeup_cause_t wakeup_reason;
 
+    static RTC_DATA_ATTR TimerSleepCause_t _timerSleepCause;
+    static RTC_DATA_ATTR bool PMU_WasSleeping;
+    EventGroupHandle_t powerInterruptGroup;
+    static const uint8_t BUTTON_EVENT = 0b01;
+    void loopPower(void *arg);
+    void handleAlerts();
     Adafruit_MAX17048 PMU;
 
-    EventGroupHandle_t pmuIrqEvent;
-
-    void IRAM_ATTR setFlag(void)
+    void interruptButton()
     {
-        xEventGroupSetBits(pmuIrqEvent, 0b1);
+        xEventGroupSetBitsFromISR(powerInterruptGroup, BUTTON_EVENT, NULL);
     }
 
     bool setupPower()
     {
+        Serial.println("PMU setup ");
         isCharging = false;
         isBatteryLowLevel = false;
         isBatteryCriticalLevel = false;
         isPekeyShortPressed = false;
-        Wire.begin(I2C_SDA_POWER, I2C_SCL_POWER, 400000);
-
+        powerInterruptGroup = xEventGroupCreate();
+        attachInterrupt(BOOT_INPUT_PIN, interruptButton, ONLOW);
+        pinMode(BOOT_INPUT_PIN, INPUT_PULLUP);
+        pinMode(VBUS_INPUT_PIN, INPUT_PULLDOWN);
+        isCharging = digitalRead(VBUS_INPUT_PIN);
+        if (isCharging)
+        {
+            VbusInsertTimestamp = millis();
+        }
+        Wire.setPins(I2C_SDA_POWER, I2C_SCL_POWER);
         if (!PMU.begin(&Wire))
         {
             mqttLogger.println("ERROR: Init PMU failed!");
             return false;
         }
-        Serial.print(F("Found MAX17048"));
-        Serial.print(F(" with Chip ID: 0x"));
-        Serial.println(PMU.getChipID(), HEX);
-        Serial.print(F("Reset voltage = "));
-        Serial.print(PMU.getResetVoltage());
-        Serial.println(" V");
-        Serial.print(F("Activity threshold = "));
-        Serial.print(PMU.getActivityThreshold());
-        Serial.println(" V change");
-
-        Serial.print(F("Hibernation threshold = "));
-        Serial.print(PMU.getHibernationThreshold());
-        Serial.println(" %/hour");
-
-        // The alert pin can be used to detect when the voltage of the battery goes below or
-        // above a voltage, you can also query the alert in the loop.
-        PMU.setAlertVoltages(3.2, 4.3);
+        if (PMU.isHibernating())
+        {
+            Serial.println("PMU is Hibernating!");
+            PMU.wake();
+        }
+        delay(250);
+        PMU.setHibernationThreshold(10.0f);
+        PMU.setAlertVoltages(3.3f, 4.3f);
         float alert_min, alert_max;
         PMU.getAlertVoltages(alert_min, alert_max);
         Serial.print("Alert voltages: ");
@@ -77,13 +80,7 @@ namespace power
         Serial.print(alert_max);
         Serial.println(" V");
         cellVoltage = PMU.cellVoltage();
-        if (isnan(cellVoltage))
-        {
-            Serial.println("Failed to read cell voltage, check battery is connected!");
-        }
-        isBatteryCriticalLevel = PMU.cellPercent() <= 5;
-        isBatteryLowLevel = PMU.cellPercent() <= 15;
-
+        percent = PMU.cellPercent();
         Serial.print(F("Batt Voltage: "));
         Serial.print(cellVoltage, 3);
         Serial.println(" V");
@@ -93,11 +90,19 @@ namespace power
         Serial.print(F("(Dis)Charge rate : "));
         Serial.print(PMU.chargeRate(), 1);
         Serial.println(" %/hr");
-        if (PMU.isHibernating())
-        {
-            Serial.println(F("Hibernating!"));
-        }
+        PMU.enableSleep(true);
         xTaskCreate(loopPower, "power", 4096, NULL, 1, NULL);
+        if (isnan(cellVoltage) || isnan(percent) || (percent == 0))
+        {
+            Serial.println("Failed to read cell voltage, check battery is connected!!!!");
+            delay(500);
+            return false;
+        }
+        else
+        {
+            isBatteryCriticalLevel = PMU.cellPercent() <= BATTERY_CRITICAL_THRESH;
+            isBatteryLowLevel = PMU.cellPercent() <= BATTERY_LOW_THRESH;
+        }
         return true;
     }
 
@@ -105,60 +110,84 @@ namespace power
     {
         while (1)
         {
-            delay(10000);
+            auto event = xEventGroupWaitBits(powerInterruptGroup, BUTTON_EVENT, pdTRUE, pdFALSE, pdMS_TO_TICKS(10000));
+            if (event & BUTTON_EVENT)
+            {
+                isPekeyShortPressed = true;
+                delay(100);
+                xEventGroupClearBits(powerInterruptGroup, BUTTON_EVENT);
+            }
             cellVoltage = PMU.cellVoltage();
-            rate = PMU.chargeRate();
-            if (isnan(cellVoltage))
+            percent = PMU.cellPercent();
+            handleAlerts();
+            if (isnan(cellVoltage) || isnan(percent) || (percent == 0))
             {
                 Serial.println("Failed to read cell voltage, check battery is connected!");
                 continue;
             }
             else
             {
-                Serial.printf(" cell %.2f v , rate %.2f %%\n", cellVoltage, rate);
-                isCharging = rate > 0;
-                isBatteryCriticalLevel = PMU.cellPercent() <= 5;
-                isBatteryLowLevel = PMU.cellPercent() <= 15;
+                rate = PMU.chargeRate();
+                percent = PMU.cellPercent();
+                bool _isCharging = (digitalRead(VBUS_INPUT_PIN) == 1);
+                if (isCharging != _isCharging)
+                {
+                    if (!isCharging)
+                    {
+                        VbusRemovedTimestamp = millis();
+                    }
+                    else
+                    {
+                        VbusInsertTimestamp = millis();
+                    }
+                }
+                isBatteryCriticalLevel = percent <= BATTERY_CRITICAL_THRESH;
+                isBatteryLowLevel = percent <= BATTERY_LOW_THRESH;
+                Serial.printf(" percent %.2f,  cell %.3f v , rate %.2f/h %%\n", percent, cellVoltage, rate);
             }
-            if (PMU.isActiveAlert())
+        }
+    }
+
+    void handleAlerts()
+    {
+        if (PMU.isActiveAlert())
+        {
+            uint8_t status_flags = PMU.getAlertStatus();
+            Serial.print(F("ALERT! flags = 0x"));
+            Serial.print(status_flags, HEX);
+            if (status_flags & MAX1704X_ALERTFLAG_SOC_CHANGE)
             {
-                uint8_t status_flags = PMU.getAlertStatus();
-                Serial.print(F("ALERT! flags = 0x"));
-                Serial.print(status_flags, HEX);
-                if (status_flags & MAX1704X_ALERTFLAG_SOC_CHANGE)
-                {
-                    Serial.print(", SOC Change");
-                    PMU.clearAlertFlag(MAX1704X_ALERTFLAG_SOC_CHANGE); // clear the alert
-                }
-                if (status_flags & MAX1704X_ALERTFLAG_SOC_LOW)
-                {
-                    Serial.print(", SOC Low");
-                    PMU.clearAlertFlag(MAX1704X_ALERTFLAG_SOC_LOW); // clear the alert
-                }
-                if (status_flags & MAX1704X_ALERTFLAG_VOLTAGE_RESET)
-                {
-                    Serial.print(", Voltage reset");
-                    PMU.clearAlertFlag(MAX1704X_ALERTFLAG_VOLTAGE_RESET); // clear the alert
-                }
-                if (status_flags & MAX1704X_ALERTFLAG_VOLTAGE_LOW)
-                {
-                    Serial.print(", Voltage low ");
-                    Serial.print(cellVoltage, 3);
-                    PMU.clearAlertFlag(MAX1704X_ALERTFLAG_VOLTAGE_LOW); // clear the alert
-                }
-                if (status_flags & MAX1704X_ALERTFLAG_VOLTAGE_HIGH)
-                {
-                    Serial.print(", Voltage high ");
-                    Serial.print(cellVoltage, 3);
-                    PMU.clearAlertFlag(MAX1704X_ALERTFLAG_VOLTAGE_HIGH); // clear the alert
-                }
-                if (status_flags & MAX1704X_ALERTFLAG_RESET_INDICATOR)
-                {
-                    Serial.print(", Reset Indicator");
-                    PMU.clearAlertFlag(MAX1704X_ALERTFLAG_RESET_INDICATOR); // clear the alert
-                }
-                Serial.println();
+                Serial.print(", SOC Change");
+                PMU.clearAlertFlag(MAX1704X_ALERTFLAG_SOC_CHANGE); // clear the alert
             }
+            if (status_flags & MAX1704X_ALERTFLAG_SOC_LOW)
+            {
+                Serial.print(", SOC Low");
+                PMU.clearAlertFlag(MAX1704X_ALERTFLAG_SOC_LOW); // clear the alert
+            }
+            if (status_flags & MAX1704X_ALERTFLAG_VOLTAGE_RESET)
+            {
+                Serial.print(", Voltage reset");
+                PMU.clearAlertFlag(MAX1704X_ALERTFLAG_VOLTAGE_RESET); // clear the alert
+            }
+            if (status_flags & MAX1704X_ALERTFLAG_VOLTAGE_LOW)
+            {
+                Serial.print(", Voltage low ");
+                Serial.print(cellVoltage, 3);
+                PMU.clearAlertFlag(MAX1704X_ALERTFLAG_VOLTAGE_LOW); // clear the alert
+            }
+            if (status_flags & MAX1704X_ALERTFLAG_VOLTAGE_HIGH)
+            {
+                Serial.print(", Voltage high ");
+                Serial.print(cellVoltage, 3);
+                PMU.clearAlertFlag(MAX1704X_ALERTFLAG_VOLTAGE_HIGH); // clear the alert
+            }
+            if (status_flags & MAX1704X_ALERTFLAG_RESET_INDICATOR)
+            {
+                Serial.print(", Reset Indicator");
+                PMU.clearAlertFlag(MAX1704X_ALERTFLAG_RESET_INDICATOR); // clear the alert
+            }
+            Serial.println();
         }
     }
 
@@ -231,12 +260,25 @@ namespace power
     {
         return PMU;
     }
-    bool isPowerVBUSOn()
+
+    float getCellPercent()
     {
-        return true;
+        return percent;
     }
 
-    bool isBattCharging()
+    float getCellVoltage()
+    {
+        return cellVoltage;
+    }
+
+    bool iskeyShortPressed()
+    {
+        bool pressed = isPekeyShortPressed;
+        isPekeyShortPressed = false;
+        return pressed;
+    }
+
+    bool isPowerVBUSOn()
     {
         return isCharging;
     }
@@ -245,10 +287,12 @@ namespace power
     {
         return 0;
     }
+
     uint64_t getLastVbusRemovedTs()
     {
         return 0;
     }
+
     bool isBatLowLevel()
     {
         return isBatteryLowLevel;
@@ -259,69 +303,96 @@ namespace power
         return isBatteryCriticalLevel;
     }
 
-    void DeepSleepWith_IMU_PMU_Wake()
-    {
-        // Configure wakeup source: IMU interrupt pin
-        mqttLogger.println("Entering deep sleep mode with IMU and PMU wakeup");
-        detachInterrupt(MOTION_INTRRUPT_PIN);
-        rtc_gpio_hold_en(MOTION_INTRRUPT_PIN);
-        rtc_gpio_hold_en(VBUS_PMU_INPUT_PIN);
-        rtc_gpio_hold_en(CAM_PIN);
-        uint64_t wakeup_mask = (1ULL << MOTION_INTRRUPT_PIN) | (1ULL << VBUS_PMU_INPUT_PIN);
-        String str = "Going to sleep now with mask  " + String(wakeup_mask, BIN);
-        mqttLogger.printf(str.c_str());
-        ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup_io(wakeup_mask, ESP_EXT1_WAKEUP_ANY_LOW));
-        delay(100);
-        esp_deep_sleep_start();
-    }
-
     void DeepSleepWith_PMU_Wake()
     {
-        mqttLogger.println("Entering deep sleep mode with PMU wakeup");
         // Configure wakeup source: IMU interrupt pin
-        detachInterrupt(VBUS_PMU_INPUT_PIN);
+        detachInterrupt(VBUS_INPUT_PIN);
         detachInterrupt(MOTION_INTRRUPT_PIN);
+        rtc_gpio_hold_en(MOTION_INTRRUPT_PIN);
+        rtc_gpio_hold_en(VBUS_INPUT_PIN);
         rtc_gpio_hold_en(CAM_PIN);
-        uint64_t wakeup_mask = (1ULL << VBUS_PMU_INPUT_PIN);
-        String str = "Going to sleep now with mask  " + String(wakeup_mask, BIN);
+        uint64_t wakeup_mask = (1ULL << VBUS_INPUT_PIN);
+        String str = "Going to sleep now DeepSleepWith_PMU_Wake with mask  " + String(wakeup_mask, BIN);
         mqttLogger.printf(str.c_str());
         ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup_io(wakeup_mask, ESP_EXT1_WAKEUP_ANY_HIGH));
-        delay(100);
+        PMU.hibernate();
+        Serial.flush();
+        delay(5);
         esp_deep_sleep_start();
     }
 
-    void DeepSleepWith_IMU_Timer_Wake(uint32_t ms)
+    void DeepSleepWith_IMU_Timer_Wake(TimerSleepCause_t cause, uint32_t ms)
     {
-        mqttLogger.println("Entering deep sleep mode with timer PMU wakeup");
+        if (OTA_VALIDATION)
+        {
+            return;
+        }
         // Configure wakeup source: IMU interrupt pin
-        detachInterrupt(VBUS_PMU_INPUT_PIN);
+        detachInterrupt(VBUS_INPUT_PIN);
         detachInterrupt(MOTION_INTRRUPT_PIN);
         rtc_gpio_hold_en(MOTION_INTRRUPT_PIN);
-        rtc_gpio_hold_en(VBUS_PMU_INPUT_PIN);
+        rtc_gpio_hold_en(VBUS_INPUT_PIN);
         rtc_gpio_hold_en(CAM_PIN);
-        uint64_t wakeup_mask = (1ULL << MOTION_INTRRUPT_PIN) | (1ULL << VBUS_PMU_INPUT_PIN);
-        String str = "Going to sleep now with mask " + String(wakeup_mask, BIN) + String(ms);
+        uint64_t wakeup_mask = (1ULL << MOTION_INTRRUPT_PIN) | (1ULL << VBUS_INPUT_PIN);
+        String str = "Going to sleep now DeepSleepWith_IMU_Timer_Wake with mask " + String(wakeup_mask, BIN) + String(ms);
         mqttLogger.printf(str.c_str());
+        bool shouldPMUSLeep = !(percent == 0);
+        if (shouldPMUSLeep && isBatteryLowLevel)
+        {
+            mqttLogger.println("PMU SLEEP");
+            PMU_WasSleeping = true;
+            PMU.sleep(true);
+        }
         esp_sleep_enable_ext1_wakeup_io(wakeup_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
-        esp_sleep_enable_timer_wakeup(1000 * ms);
+        if (ms > 0)
+        {
+            mqttLogger.printf("with timer %d seconds , reason %s", ms / 1000, GetTimerSleepCause(cause));
+            esp_sleep_enable_timer_wakeup(1000 * ms);
+            _timerSleepCause = cause;
+        }
+        Serial.flush();
+        delay(10);
         esp_deep_sleep_start();
     }
 
-    void DeepSleepWith_Timer_Wake(uint32_t ms)
+    void DeepSleepWith_PMU_Timer_Wake(TimerSleepCause_t cause, uint32_t ms)
     {
+        if (OTA_VALIDATION)
+        {
+            return;
+        }
         mqttLogger.println("Entering deep sleep mode with timer PMU wakeup");
         // Configure wakeup source: IMU interrupt pin
-        detachInterrupt(VBUS_PMU_INPUT_PIN);
+        detachInterrupt(VBUS_INPUT_PIN);
         detachInterrupt(MOTION_INTRRUPT_PIN);
         rtc_gpio_hold_en(MOTION_INTRRUPT_PIN);
-        rtc_gpio_hold_en(VBUS_PMU_INPUT_PIN);
+        rtc_gpio_hold_en(VBUS_INPUT_PIN);
         rtc_gpio_hold_en(CAM_PIN);
-        uint64_t wakeup_mask = (1ULL << VBUS_PMU_INPUT_PIN);
+        uint64_t wakeup_mask = (1ULL << VBUS_INPUT_PIN);
         String str = "Going to sleep now with mask " + String(wakeup_mask, BIN) + String(ms);
         mqttLogger.printf(str.c_str());
+        bool shouldPMUSLeep = !(percent == 0);
+        if (shouldPMUSLeep && isBatteryLowLevel)
+        {
+            mqttLogger.println("PMU SLEEP");
+            PMU_WasSleeping = true;
+            PMU.sleep(true);
+        }
         esp_sleep_enable_ext1_wakeup_io(wakeup_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
-        esp_sleep_enable_timer_wakeup(1000 * ms);
+        if (ms > 0)
+        {
+            mqttLogger.printf("with timer %d seconds , reason %s", ms / 1000, GetTimerSleepCause(cause));
+            esp_sleep_enable_timer_wakeup(1000 * ms);
+            _timerSleepCause = cause;
+        }
+        Serial.flush();
+        delay(10);
         esp_deep_sleep_start();
+    }
+
+    TimerSleepCause_t getSleepCause()
+    {
+        return _timerSleepCause;
     }
 
     WakeUpReason Get_wake_reason()
@@ -343,7 +414,7 @@ namespace power
                 wakeUpReason = WakeUpReason::MOTION;
                 break;
             }
-            if (wakeup_pin_mask & ((uint64_t)1 << VBUS_PMU_INPUT_PIN))
+            if (wakeup_pin_mask & ((uint64_t)1 << VBUS_INPUT_PIN))
             {
                 Serial.println("Wakeup cause detected: PMU interrupt");
                 wakeUpReason = WakeUpReason::START;
@@ -369,5 +440,5 @@ namespace power
         }
         return wakeUpReason;
     }
-  
+
 };

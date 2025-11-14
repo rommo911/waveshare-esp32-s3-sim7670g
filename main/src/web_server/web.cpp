@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h" // The current version of this program
 #include <Preferences.h>   // For NVS storage
+#include "ArduinoJson.h"   // For JSON parsing
 #include "LittleFS.h"
 #include <Update.h>
 #include "sdcard/sdcard.h"
@@ -103,7 +104,7 @@ namespace fs
       setenv("TZ", timezone.c_str(), 1);
       tzset();
 
-      struct tm timeinfo = {0};
+      struct tm timeinfo = {};
       if (strptime(datetime.c_str(), "%Y-%m-%dT%H:%M", &timeinfo) != NULL)
       {
         timeinfo.tm_sec = 0;
@@ -556,14 +557,16 @@ namespace fs
     }
     Preferences pref;
     pref.begin("timing", true);
-    uint32_t wifiTimeout = pref.getUInt("wifitm", 300000);           // 5 minutes default
-    uint32_t noMotionTimeout = pref.getUInt("nomotiontm", 10000);    // 10 seconds default
-    uint32_t secureModeTimeout = pref.getUInt("securmodetm", 10000); // 10 seconds default
+    uint32_t wifiTimeout = pref.getULong("wifitm", 300000);                // 5 minutes default
+    uint32_t noMotionTimeout = pref.getULong("nomotiontm", 10000);         // 10 seconds default
+    uint64_t SnapShotTime = pref.getULong64("SnapShotTime", 2*60*60*1000); //
+    uint32_t secureModeTimeout = pref.getULong("securmodetm", 10000);      // 10 seconds default
     pref.end();
 
     String jsonResponse = "{";
     jsonResponse += "\"wifitm\":" + String(wifiTimeout) + ",";
     jsonResponse += "\"nomotiontm\":" + String(noMotionTimeout) + ",";
+    jsonResponse += "\"SnapShotTime\":" + String(SnapShotTime) + ",";
     jsonResponse += "\"securmodetm\":" + String(secureModeTimeout);
     jsonResponse += "}";
 
@@ -592,15 +595,19 @@ namespace fs
       pref.begin("timing", false);
       if (doc["wifitm"].is<uint32_t>())
       {
-        pref.putUInt("wifitm", doc["wifitm"].as<uint32_t>());
+        pref.putULong("wifitm", doc["wifitm"].as<uint32_t>());
       }
       if (doc["nomotiontm"].is<uint32_t>())
       {
-        pref.putUInt("nomotiontm", doc["nomotiontm"].as<uint32_t>());
+        pref.putULong("nomotiontm", doc["nomotiontm"].as<uint32_t>());
       }
       if (doc["securmodetm"].is<uint32_t>())
       {
-        pref.putUInt("securmodetm", doc["securmodetm"].as<uint32_t>());
+        pref.putULong("securmodetm", doc["securmodetm"].as<uint32_t>());
+      }
+      if (doc["SnapShotTime"].is<uint32_t>())
+      {
+        pref.putULong64("SnapShotTime", doc["SnapShotTime"].as<uint64_t>());
       }
       pref.end();
 
@@ -629,7 +636,7 @@ namespace fs
     {
       FSsource = FServerSource::LittleFS;
       Serial.println("Using littlefs as filesystem for web server.");
-      if (!LittleFS.begin(false, "/littlefs", 10,"storage"))
+      if (!LittleFS.begin(false, "/littlefs", 10, "storage"))
       {
         Serial.println("ERROR on mounting filesystem.");
         return false;

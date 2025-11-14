@@ -25,7 +25,7 @@ namespace modem
         uint32_t lastupdateTs;
     };
 
-    bool initModem7080();
+    bool initModem();
     bool startModem();
     bool SetGPS(bool enable);
     const GPS_INFO &getGPSInfo();
