@@ -195,13 +195,13 @@ namespace fs
 
     String json = "{";
     json += "\"ssid\":\"" + ssid + "\",";
-    json += "\"pass\":\"" + pass + "\",";
+    json += "\"pass\":\"" + (pass.length() > 0 ? String("********") : String("")) + "\",";
     json += "\"ap_ssid\":\"" + ap_ssid + "\",";
-    json += "\"ap_pass\":\"" + ap_pass + "\",";
+    json += "\"ap_pass\":\"" + (ap_pass.length() > 0 ? String("********") : String("")) + "\",";
     json += "\"mqtt_server\":\"" + mqtt_server + "\",";
     json += "\"mqtt_port\":" + String(mqtt_port) + ",";
     json += "\"mqtt_user\":\"" + mqtt_user + "\",";
-    json += "\"mqtt_pass\":\"" + mqtt_pass + "\",";
+    json += "\"mqtt_pass\":\"" + (mqtt_pass.length() > 0 ? String("********") : String("")) + "\",";
     json += "\"mqtt_topic\":\"" + mqtt_topic + "\",";
     json += "\"mqtt_cmd_topic\":\"" + mqtt_cmd_topic + "\"";
     json += "}";
@@ -231,19 +231,19 @@ namespace fs
       pref.begin("wifi", false);
       if (doc["ssis"].is<String>())
         pref.putString("ssid", String((const char *)doc["ssid"]));
-      if (doc["pass"].is<String>())
+      if (doc["pass"].is<String>() && String((const char *)doc["pass"]).length() > 0)
         pref.putString("pass", String((const char *)doc["pass"]));
       if (doc["ap_ssid"].is<String>())
         pref.putString("ap_ssid", String((const char *)doc["ap_ssid"]));
-      if (doc["ap_pass"].is<String>())
+      if (doc["ap_pass"].is<String>() && String((const char *)doc["ap_pass"]).length() > 0)
         pref.putString("ap_pass", String((const char *)doc["ap_pass"]));
       if (doc["mqtt_server"].is<String>())
         pref.putString("mqtt_server", String((const char *)doc["mqtt_server"]));
-      if (doc["mqtt_port"].is<String>())
+      if (doc["mqtt_port"].is<uint32_t>())
         pref.putUInt("mqtt_port", (uint32_t)doc["mqtt_port"]);
       if (doc["mqtt_user"].is<String>())
         pref.putString("mqtt_user", String((const char *)doc["mqtt_user"]));
-      if (doc["mqtt_pass"].is<String>())
+      if (doc["mqtt_pass"].is<String>() && String((const char *)doc["mqtt_pass"]).length() > 0)
         pref.putString("mqtt_pass", String((const char *)doc["mqtt_pass"]));
       if (doc["mqtt_topic"].is<String>())
         pref.putString("mqtt_topic", String((const char *)doc["mqtt_topic"]));
@@ -605,7 +605,7 @@ namespace fs
       {
         pref.putULong("securmodetm", doc["securmodetm"].as<uint32_t>());
       }
-      if (doc["SnapShotTime"].is<uint32_t>())
+      if (doc["SnapShotTime"].is<uint64_t>())
       {
         pref.putULong64("SnapShotTime", doc["SnapShotTime"].as<uint64_t>());
       }
@@ -620,11 +620,6 @@ namespace fs
       GetmyWebServer().send(400, "text/plain", "No data received");
     }
   }
-  static void handleNotFound()
-  {
-    GetmyWebServer().send(404, "text/plain", "404: Not Found");
-  }
-  static const unsigned long loginTimeout = 5 * 60 * 1000; // 5 minutes in milliseconds
 
   bool fs_server_setup()
   {

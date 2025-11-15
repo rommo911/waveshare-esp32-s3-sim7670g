@@ -224,7 +224,7 @@ void loopImuMotion()
         return;
     }
     // wait untill no motion for a while and Vbus removed for a while
-    if (NoMotionSince(getNoMotionTimeout()) && NoVbusSince(getSecureModeTimeout()))
+    if (NoMotionSince(getNoMotionTimeout()) && NoVbusSince(getSecureModeTimeout()) && !GetWifiOn())
     {
         mqttLogger.println("starting secure mode");
         turnOffCamera();
