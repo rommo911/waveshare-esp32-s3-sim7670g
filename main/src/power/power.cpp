@@ -158,7 +158,7 @@ namespace power
                 }
                 isBatteryCriticalLevel = percent <= BATTERY_CRITICAL_THRESH;
                 isBatteryLowLevel = percent <= BATTERY_LOW_THRESH;
-                Serial.printf(" percent %.2f,  cell %.3f v , rate %.2f %%/h\n", percent, cellVoltage, rate);
+                mqttLogger.printf(" percent %.2f,  cell %.3f v , rate %.2f %%/h\n", percent, cellVoltage, rate);
             }
         }
     }
