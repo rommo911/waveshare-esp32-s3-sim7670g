@@ -59,18 +59,32 @@ namespace power
             VbusInsertTimestamp = millis();
         }
         Wire.setPins(I2C_SDA_POWER, I2C_SCL_POWER);
-        if (!PMU.begin(&Wire))
+        if (!PMU.begin(&Wire, false))
         {
-            mqttLogger.println("ERROR: Init PMU failed!");
-            return false;
+            mqttLogger.println("ERROR: Init PMU failed.. try reset");
+            if (!PMU.begin(&Wire, true))
+            {
+                mqttLogger.println("ERROR: Init PMU failed..");
+                return false;
+            }
+            delay(50);
+            PMU.enableSleep(false);
+            PMU.sleep(false);
+            delay(250);
         }
         if (PMU.isHibernating())
         {
-            Serial.println("PMU is Hibernating!");
+            Serial.println("PMU is Hibernating!..wake");
             PMU.wake();
         }
-        delay(250);
-        PMU.setHibernationThreshold(10.0f);
+        if (PMU_WasSleeping)
+        {
+            Serial.println("PMU was sleeping!");
+            PMU_WasSleeping = false;
+            PMU.quickStart();
+            delay(510);
+        }
+        PMU.setHibernationThreshold(5);
         PMU.setAlertVoltages(3.3f, 4.3f);
         float alert_min, alert_max;
         PMU.getAlertVoltages(alert_min, alert_max);
@@ -90,13 +104,12 @@ namespace power
         Serial.print(F("(Dis)Charge rate : "));
         Serial.print(PMU.chargeRate(), 1);
         Serial.println(" %/hr");
-        PMU.enableSleep(true);
         xTaskCreate(loopPower, "power", 4096, NULL, 1, NULL);
         if (isnan(cellVoltage) || isnan(percent) || (percent == 0))
         {
             Serial.println("Failed to read cell voltage, check battery is connected!!!!");
+            PMU.quickStart();
             delay(500);
-            return false;
         }
         else
         {
@@ -108,6 +121,8 @@ namespace power
 
     void loopPower(void *arg)
     {
+        delay(2500);
+        PMU.quickStart();
         while (1)
         {
             auto event = xEventGroupWaitBits(powerInterruptGroup, BUTTON_EVENT, pdTRUE, pdFALSE, pdMS_TO_TICKS(10000));
@@ -143,7 +158,7 @@ namespace power
                 }
                 isBatteryCriticalLevel = percent <= BATTERY_CRITICAL_THRESH;
                 isBatteryLowLevel = percent <= BATTERY_LOW_THRESH;
-                Serial.printf(" percent %.2f,  cell %.3f v , rate %.2f/h %%\n", percent, cellVoltage, rate);
+                Serial.printf(" percent %.2f,  cell %.3f v , rate %.2f %%/h\n", percent, cellVoltage, rate);
             }
         }
     }
@@ -312,7 +327,7 @@ namespace power
         rtc_gpio_hold_en(VBUS_INPUT_PIN);
         rtc_gpio_hold_en(CAM_PIN);
         uint64_t wakeup_mask = (1ULL << VBUS_INPUT_PIN);
-        String str = "Going to sleep now DeepSleepWith_PMU_Wake with mask  " + String(wakeup_mask, BIN);
+        String str = "Going to sleep now DeepSleepWith_PMU_Wake with mask 0b" + String(wakeup_mask, BIN);
         mqttLogger.printf(str.c_str());
         ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup_io(wakeup_mask, ESP_EXT1_WAKEUP_ANY_HIGH));
         PMU.hibernate();
@@ -334,14 +349,19 @@ namespace power
         rtc_gpio_hold_en(VBUS_INPUT_PIN);
         rtc_gpio_hold_en(CAM_PIN);
         uint64_t wakeup_mask = (1ULL << MOTION_INTRRUPT_PIN) | (1ULL << VBUS_INPUT_PIN);
-        String str = "Going to sleep now DeepSleepWith_IMU_Timer_Wake with mask " + String(wakeup_mask, BIN) + String(ms);
+        String str = "Going to sleep now DeepSleepWith_IMU_Timer_Wake with mask 0b" + String(wakeup_mask, BIN) ;
         mqttLogger.printf(str.c_str());
         bool shouldPMUSLeep = !(percent == 0);
         if (shouldPMUSLeep && isBatteryLowLevel)
         {
             mqttLogger.println("PMU SLEEP");
             PMU_WasSleeping = true;
+            PMU.enableSleep(true);
             PMU.sleep(true);
+        }
+        else
+        {
+            PMU.hibernate();
         }
         esp_sleep_enable_ext1_wakeup_io(wakeup_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
         if (ms > 0)
@@ -369,14 +389,19 @@ namespace power
         rtc_gpio_hold_en(VBUS_INPUT_PIN);
         rtc_gpio_hold_en(CAM_PIN);
         uint64_t wakeup_mask = (1ULL << VBUS_INPUT_PIN);
-        String str = "Going to sleep now with mask " + String(wakeup_mask, BIN) + String(ms);
+        String str = "Going to sleep now with mask " + String(wakeup_mask, BIN);
         mqttLogger.printf(str.c_str());
         bool shouldPMUSLeep = !(percent == 0);
         if (shouldPMUSLeep && isBatteryLowLevel)
         {
             mqttLogger.println("PMU SLEEP");
             PMU_WasSleeping = true;
+            PMU.enableSleep(true);
             PMU.sleep(true);
+        }
+        else
+        {
+            PMU.hibernate();
         }
         esp_sleep_enable_ext1_wakeup_io(wakeup_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
         if (ms > 0)

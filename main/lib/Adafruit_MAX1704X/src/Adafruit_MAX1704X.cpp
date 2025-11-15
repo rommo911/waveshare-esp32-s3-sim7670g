@@ -47,30 +47,38 @@ Adafruit_MAX17048::~Adafruit_MAX17048(void) {}
  *            The Wire object to be used for I2C connections.
  *    @return True if initialization was successful, otherwise false.
  */
-bool Adafruit_MAX17048::begin(TwoWire *wire) {
-  if (i2c_dev) {
+bool Adafruit_MAX17048::begin(TwoWire *wire, bool _reset)
+{
+  if (i2c_dev)
+  {
     delete i2c_dev; // remove old interface
     delete status_reg;
   }
 
   i2c_dev = new Adafruit_I2CDevice(MAX17048_I2CADDR_DEFAULT, wire);
 
-  if (!i2c_dev->begin()) {
+  if (!i2c_dev->begin())
+  {
     return false;
   }
 
-  if (!isDeviceReady()) { // couldnt find the chip - check battery!
+  if (!isDeviceReady())
+  { // couldnt find the chip - check battery!
     return false;
   }
 
   status_reg = new Adafruit_BusIO_Register(i2c_dev, MAX1704X_STATUS_REG);
 
-  if (!reset()) {
-    return false;
+  if (_reset)
+  {
+    if (!reset())
+      return false;
+    else
+      delay(100);
   }
 
-  enableSleep(false);
-  sleep(false);
+  //enableSleep(false);
+  //sleep(false);
 
   return true;
 }
@@ -79,7 +87,8 @@ bool Adafruit_MAX17048::begin(TwoWire *wire) {
  *    @brief  Get IC LSI version
  *    @return 16-bit value read from MAX1704X_VERSION_REG register
  */
-uint16_t Adafruit_MAX17048::getICversion(void) {
+uint16_t Adafruit_MAX17048::getICversion(void)
+{
   Adafruit_BusIO_Register ic_vers =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_VERSION_REG, 2, MSBFIRST);
   return ic_vers.read();
@@ -89,7 +98,8 @@ uint16_t Adafruit_MAX17048::getICversion(void) {
  *    @brief  Get semi-unique chip ID
  *    @return 8-bit value read from MAX1704X_VERSION_REG register
  */
-uint8_t Adafruit_MAX17048::getChipID(void) {
+uint8_t Adafruit_MAX17048::getChipID(void)
+{
   Adafruit_BusIO_Register ic_vers =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_CHIPID_REG);
   return ic_vers.read();
@@ -100,7 +110,8 @@ uint8_t Adafruit_MAX17048::getChipID(void) {
  *    Chip ID = 0xFF and Version = 0xFFFF if no battery is attached
  *    @return True if the MAX1704x is ready to be read from
  */
-bool Adafruit_MAX17048::isDeviceReady(void) {
+bool Adafruit_MAX17048::isDeviceReady(void)
+{
   return (getICversion() & 0xFFF0) == 0x0010;
 }
 
@@ -108,19 +119,23 @@ bool Adafruit_MAX17048::isDeviceReady(void) {
  *    @brief  Soft reset the MAX1704x
  *    @return True on reset success
  */
-bool Adafruit_MAX17048::reset(void) {
+bool Adafruit_MAX17048::reset(void)
+{
   Adafruit_BusIO_Register cmd =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_CMD_REG, 2, MSBFIRST);
 
   // send reset command, the MAX1704 will reset before ACKing,
   // so I2C xfer is expected to *fail* with a NACK
-  if (cmd.write(0x5400)) {
+  if (cmd.write(0x5400))
+  {
     return false;
   }
 
   // loop and attempt to clear alert until success
-  for (uint8_t retries = 0; retries < 3; retries++) {
-    if (clearAlertFlag(MAX1704X_ALERTFLAG_RESET_INDICATOR)) {
+  for (uint8_t retries = 0; retries < 3; retries++)
+  {
+    if (clearAlertFlag(MAX1704X_ALERTFLAG_RESET_INDICATOR))
+    {
       return true;
     }
   }
@@ -137,7 +152,8 @@ bool Adafruit_MAX17048::reset(void) {
  *    MAX1704X_ALERTFLAG_VOLTAGE_HIGH, or MAX1704X_ALERTFLAG_RESET_INDICATOR
  *    @return True if the status register write succeeded
  */
-bool Adafruit_MAX17048::clearAlertFlag(uint8_t flags) {
+bool Adafruit_MAX17048::clearAlertFlag(uint8_t flags)
+{
   return status_reg->write(status_reg->read() & ~flags);
 }
 
@@ -145,7 +161,8 @@ bool Adafruit_MAX17048::clearAlertFlag(uint8_t flags) {
  *    @brief  Get battery voltage
  *    @return Floating point value read in Volts
  */
-float Adafruit_MAX17048::cellVoltage(void) {
+float Adafruit_MAX17048::cellVoltage(void)
+{
   if (!isDeviceReady())
     return NAN;
   Adafruit_BusIO_Register vcell =
@@ -158,7 +175,8 @@ float Adafruit_MAX17048::cellVoltage(void) {
  *    @brief  Get battery state in percent (0-100%)
  *    @return Floating point value from 0 to 100.0
  */
-float Adafruit_MAX17048::cellPercent(void) {
+float Adafruit_MAX17048::cellPercent(void)
+{
   if (!isDeviceReady())
     return NAN;
   Adafruit_BusIO_Register vperc =
@@ -172,7 +190,8 @@ float Adafruit_MAX17048::cellPercent(void) {
  *    @brief  Charge or discharge rate of the battery in percent/hour
  *    @return Floating point value from 0 to 100.0% per hour
  */
-float Adafruit_MAX17048::chargeRate(void) {
+float Adafruit_MAX17048::chargeRate(void)
+{
   if (!isDeviceReady())
     return NAN;
   Adafruit_BusIO_Register crate =
@@ -188,7 +207,8 @@ float Adafruit_MAX17048::chargeRate(void) {
  * considered a reset
  */
 
-void Adafruit_MAX17048::setResetVoltage(float reset_v) {
+void Adafruit_MAX17048::setResetVoltage(float reset_v)
+{
   Adafruit_BusIO_Register vreset_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_VRESET_REG);
   Adafruit_BusIO_RegisterBits vreset_bits =
@@ -204,7 +224,8 @@ void Adafruit_MAX17048::setResetVoltage(float reset_v) {
  *    @returns Floating point voltage that, when we go below, should be
  * considered a reset
  */
-float Adafruit_MAX17048::getResetVoltage(void) {
+float Adafruit_MAX17048::getResetVoltage(void)
+{
   Adafruit_BusIO_Register vreset_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_VRESET_REG);
   Adafruit_BusIO_RegisterBits vreset_bits =
@@ -220,7 +241,8 @@ float Adafruit_MAX17048::getResetVoltage(void) {
  *    @param minv The minimum voltage: alert if we go below
  *    @param maxv The maximum voltage: alert if we go above
  */
-void Adafruit_MAX17048::setAlertVoltages(float minv, float maxv) {
+void Adafruit_MAX17048::setAlertVoltages(float minv, float maxv)
+{
   Adafruit_BusIO_Register valert_min_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_VALERT_REG);
   Adafruit_BusIO_Register valert_max_reg =
@@ -237,7 +259,8 @@ void Adafruit_MAX17048::setAlertVoltages(float minv, float maxv) {
  *    @param minv The minimum voltage: alert if we go below
  *    @param maxv The maximum voltage: alert if we go above
  */
-void Adafruit_MAX17048::getAlertVoltages(float &minv, float &maxv) {
+void Adafruit_MAX17048::getAlertVoltages(float &minv, float &maxv)
+{
   Adafruit_BusIO_Register valert_min_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_VALERT_REG);
   Adafruit_BusIO_Register valert_max_reg =
@@ -251,7 +274,8 @@ void Adafruit_MAX17048::getAlertVoltages(float &minv, float &maxv) {
  *    @brief A check to determine if there is an unhandled alert
  *    @returns True if there is an alert status flag
  */
-bool Adafruit_MAX17048::isActiveAlert(void) {
+bool Adafruit_MAX17048::isActiveAlert(void)
+{
   Adafruit_BusIO_Register config_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_CONFIG_REG, 2, MSBFIRST);
   Adafruit_BusIO_RegisterBits alert_bit =
@@ -266,7 +290,8 @@ bool Adafruit_MAX17048::isActiveAlert(void) {
  *    MAX1704X_ALERTFLAG_VOLTAGE_RESET, MAX1704X_ALERTFLAG_VOLTAGE_LOW
  *    MAX1704X_ALERTFLAG_VOLTAGE_HIGH, or MAX1704X_ALERTFLAG_RESET_INDICATOR
  */
-uint8_t Adafruit_MAX17048::getAlertStatus(void) {
+uint8_t Adafruit_MAX17048::getAlertStatus(void)
+{
   return status_reg->read() & 0x7F;
 }
 
@@ -277,7 +302,8 @@ uint8_t Adafruit_MAX17048::getAlertStatus(void) {
  *    @returns The threshold, from 0-0.31874 V that will be used to determine
  *    whether its time to exit hibernation.
  */
-float Adafruit_MAX17048::getActivityThreshold(void) {
+float Adafruit_MAX17048::getActivityThreshold(void)
+{
   Adafruit_BusIO_Register actthr_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_HIBRT_REG + 1);
   return (float)actthr_reg.read() * 0.00125; // 1.25mV per LSB
@@ -290,7 +316,8 @@ float Adafruit_MAX17048::getActivityThreshold(void) {
  *    @param actthresh The threshold voltage, from 0-0.31874 V that will be
  *    used to determine whether its time to exit hibernation.
  */
-void Adafruit_MAX17048::setActivityThreshold(float actthresh) {
+void Adafruit_MAX17048::setActivityThreshold(float actthresh)
+{
   Adafruit_BusIO_Register actthr_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_HIBRT_REG + 1);
   actthr_reg.write(
@@ -304,7 +331,8 @@ void Adafruit_MAX17048::setActivityThreshold(float actthresh) {
  *    @returns The threshold, from 0-53% that will be used to determine
  *    whether its time to hibernate.
  */
-float Adafruit_MAX17048::getHibernationThreshold(void) {
+float Adafruit_MAX17048::getHibernationThreshold(void)
+{
   Adafruit_BusIO_Register hibthr_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_HIBRT_REG);
   return (float)hibthr_reg.read() * 0.208; // 0.208% per hour
@@ -317,7 +345,8 @@ float Adafruit_MAX17048::getHibernationThreshold(void) {
  *    @param hibthresh The threshold, from 0-53% that will be used to determine
  *    whether its time to hibernate.
  */
-void Adafruit_MAX17048::setHibernationThreshold(float hibthresh) {
+void Adafruit_MAX17048::setHibernationThreshold(float hibthresh)
+{
   Adafruit_BusIO_Register hibthr_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_HIBRT_REG);
   hibthr_reg.write(
@@ -328,7 +357,8 @@ void Adafruit_MAX17048::setHibernationThreshold(float hibthresh) {
  *    @brief Query whether the chip is hibernating now
  *    @returns True if hibernating
  */
-bool Adafruit_MAX17048::isHibernating(void) {
+bool Adafruit_MAX17048::isHibernating(void)
+{
   Adafruit_BusIO_Register mode_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_MODE_REG);
   Adafruit_BusIO_RegisterBits hib_bit =
@@ -339,7 +369,8 @@ bool Adafruit_MAX17048::isHibernating(void) {
 /*!
  *    @brief Enter hibernation mode.
  */
-void Adafruit_MAX17048::hibernate(void) {
+void Adafruit_MAX17048::hibernate(void)
+{
   Adafruit_BusIO_Register actthr_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_HIBRT_REG + 1);
   Adafruit_BusIO_Register hibthr_reg =
@@ -351,7 +382,8 @@ void Adafruit_MAX17048::hibernate(void) {
 /*!
  *    @brief Wake up from hibernation mode.
  */
-void Adafruit_MAX17048::wake(void) {
+void Adafruit_MAX17048::wake(void)
+{
   Adafruit_BusIO_Register actthr_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_HIBRT_REG + 1);
   Adafruit_BusIO_Register hibthr_reg =
@@ -364,7 +396,8 @@ void Adafruit_MAX17048::wake(void) {
  *    @brief Enter ultra-low-power sleep mode (1uA draw)
  *    @param s True to force-enter sleep mode, False to leave sleep
  */
-void Adafruit_MAX17048::sleep(bool s) {
+void Adafruit_MAX17048::sleep(bool s)
+{
   Adafruit_BusIO_Register config_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_CONFIG_REG, 2, MSBFIRST);
   Adafruit_BusIO_RegisterBits sleep_bit =
@@ -376,7 +409,8 @@ void Adafruit_MAX17048::sleep(bool s) {
  *    @brief Enable the ability to enter ultra-low-power sleep mode (1uA draw)
  *    @param en True to enable sleep mode, False to only allow hibernation
  */
-void Adafruit_MAX17048::enableSleep(bool en) {
+void Adafruit_MAX17048::enableSleep(bool en)
+{
   Adafruit_BusIO_Register mode_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_MODE_REG);
   Adafruit_BusIO_RegisterBits sleepen_bit =
@@ -390,7 +424,8 @@ void Adafruit_MAX17048::enableSleep(bool en) {
  plugged in or if there's a lot of load on the battery so uncomment only if
  you're sure you want to 'reset' the chips charge calculator.
  */
-void Adafruit_MAX17048::quickStart(void) {
+void Adafruit_MAX17048::quickStart(void)
+{
   Adafruit_BusIO_Register mode_reg =
       Adafruit_BusIO_Register(i2c_dev, MAX1704X_MODE_REG);
   Adafruit_BusIO_RegisterBits quick_bit =

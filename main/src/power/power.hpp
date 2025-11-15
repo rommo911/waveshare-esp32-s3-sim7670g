@@ -36,9 +36,9 @@ namespace power
         switch (cause)
         {
         case AFTER_MOTION:
-            return "";
+            return "AFTER_MOTION";
         case SLEEP_SNAP_SHOT:
-            return "";
+            return "SLEEP_SNAP_SHOT";
         default:
             return "NA";
         }
