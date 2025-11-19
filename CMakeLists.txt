@@ -6,6 +6,7 @@ add_definitions(
     -DTINY_GSM_YIELD_MS=20
     -DTINY_GSM_RX_BUFFER=1024    
 )
+set(CMAKE_CXX_STANDARD 17)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # "Trim" the build. Include the minimal set of components, main, and anything it depends on.

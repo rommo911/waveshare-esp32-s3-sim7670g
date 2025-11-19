@@ -21,7 +21,7 @@
 #include "nvs_flash.h"
 #include <thread>
 #include "esp_ota_ops.h"
-
+#include "pppos_client.h"
 
 bool simulatedMotionTrigger = false;
 bool simulatedLowPowerTrigger = false;
@@ -44,6 +44,14 @@ static inline bool NoVbusSince(const uint32_t timeout)
     return (millis() - power::getLastVbusRemovedTs() > timeout);
 }
 
+void light_sleep(uint16_t seconds)
+{
+    Serial.printf("light sleeping for %d seconds\n", seconds);
+    esp_sleep_enable_timer_wakeup(seconds * 1000000);
+    esp_light_sleep_start();
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+}
+
 void CheckMotionCount()
 {
     if (motionCounter > 0)
@@ -56,11 +64,17 @@ void CheckMotionCount()
 
 void setup()
 {
+
     uint8_t counter = 0;
     Serial.begin(115200);
     wu = power::Get_wake_reason();
     power::setupPower();
-    setCpuFrequencyMhz(80);
+    setCpuFrequencyMhz(160);
+    StartModemDCE();
+    while (1)
+    {
+        light_sleep(1);
+    }
     // Serial.setTxBufferSize(512);
     led::led_init();
     led::set_solid(0, led::_rgb(0, 0, 30));
@@ -86,7 +100,7 @@ void setup()
         counter = 0;
         while (!Serial && counter++ < 20)
         {
-            delay(100);
+            delay(1);
         };
         delay(1500);
     }

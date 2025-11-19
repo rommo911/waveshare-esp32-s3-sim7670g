@@ -91,7 +91,15 @@
     "thread": "cpp",
     "cinttypes": "cpp",
     "typeinfo": "cpp",
-    "variant": "cpp"
+    "variant": "cpp",
+    "esp_modem_api.h": "c",
+    "esp_log.h": "c",
+    "esp_netif_ppp.h": "c",
+    "mqtt_client.h": "c",
+    "task.h": "c",
+    "esp_modem_usb_c_api.h": "c",
+    "esp_modem_usb_config.h": "c",
+    "*.inc": "c"
   },
   "idf.portWin": "COM10"
 }

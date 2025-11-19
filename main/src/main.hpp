@@ -25,4 +25,5 @@ void checkOTA_rollback(void *arg);
 extern uint32_t OTA_VALIDATION_COUNTER;
 extern bool OTA_VALIDATION;
 
+void light_sleep(uint16_t seconds);
 #endif // MAIN_H_
