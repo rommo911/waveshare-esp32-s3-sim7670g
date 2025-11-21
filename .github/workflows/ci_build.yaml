@@ -6,8 +6,8 @@ on:
       - master
       - main
       - dev
-      - feature/*
-      - bugfix/*
+    tags:
+      - 'v*' # Trigger on tags that start with 'v', e.g., v1.0.0
   pull_request:
     branches:
       - master
@@ -20,6 +20,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Run only on pushes to specific branches/tags, pull requests, or manual dispatch.
+    # We will use 'needs' in the release job to wait for this one.
+    if: github.event_name != 'release'
     strategy:
       matrix:
         esp_idf_version: [v5.5.1]
@@ -36,9 +39,38 @@ jobs:
           esp_idf_version: ${{ matrix.esp_idf_version }}
           target: esp32s3
 
+      # Use a simpler artifact name for the job that runs on all pushes/PRs
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: waveshare-esp32s3-4g-${{ matrix.esp_idf_version }}-${{ steps.timestamp.outputs.timestamp }}
           path: |
+            build/*.bin
+
+  # 2. Release Job (New Logic)
+  release:
+    # This job should only run when a tag is pushed.
+    if: startsWith(github.ref, 'refs/tags/')
+    # This job depends on 'build' to ensure the firmware is ready.
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      # Use a simplified matrix for release to match the build job's output artifact
+      - name: Download built firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: waveshare-esp32s3-4g-${{ matrix.esp_idf_version }}-${{ steps.timestamp.outputs.timestamp }}
+          path: build/
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Uses the tag pushed (e.g., v1.0.0) as the release tag
+          # The name is the title of the release
+          name: Release ${{ github.ref_name }}
+          # The files in the 'build/' directory will be uploaded as release assets
+          files: |
             build/*.bin

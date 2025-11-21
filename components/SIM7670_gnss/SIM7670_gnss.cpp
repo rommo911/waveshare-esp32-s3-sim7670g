@@ -456,7 +456,7 @@ esp_modem::command_result answer_call_lib(esp_modem::CommandableIf *t)
 {
     std::string str_out;
     // FIXME: This should be "ATA\r" to answer a call, not a GNSS command.
-    auto ret = esp_modem::dce_commands::generic_command(t, "ATA\r","OK","ERROR",1500);
+    auto ret = esp_modem::dce_commands::generic_command(t, "ATA\r", "OK", "ERROR", 1500);
     if (ret != esp_modem::command_result::OK)
     {
         return ret;
@@ -494,16 +494,17 @@ esp_modem::command_result DCE_gnss::set_sms_text_mode(bool text_mode)
     return device->set_sms_text_mode(text_mode);
 }
 
-
 esp_modem::command_result get_unread_sms_list_lib(esp_modem::CommandableIf *t, std::list<sms_t> &sms_list)
 {
     std::string str_out;
     auto ret = esp_modem::dce_commands::generic_get_string(t, "AT+CMGL=\"REC UNREAD\"\r", str_out, 5000);
-    if (ret != esp_modem::command_result::OK) {
+    if (ret != esp_modem::command_result::OK)
+    {
         return ret;
     }
 
-    if (str_out.find("OK") == std::string::npos) {
+    if (str_out.find("OK") == std::string::npos)
+    {
         return esp_modem::command_result::FAIL;
     }
 
@@ -511,15 +512,19 @@ esp_modem::command_result get_unread_sms_list_lib(esp_modem::CommandableIf *t, s
     std::stringstream ss(str_out);
     std::string line;
 
-    while (std::getline(ss, line)) {
-        if (line.rfind("+CMGL: ", 0) == 0) {
+    while (std::getline(ss, line))
+    {
+        if (line.rfind("+CMGL: ", 0) == 0)
+        {
             sms_t current_sms;
             std::string header = line;
             // Try to get message content from the next line
-            if (std::getline(ss, line)) {
+            if (std::getline(ss, line))
+            {
                 current_sms.content = line;
                 // Trim trailing \r if present
-                if (!current_sms.content.empty() && current_sms.content.back() == '\r') {
+                if (!current_sms.content.empty() && current_sms.content.back() == '\r')
+                {
                     current_sms.content.pop_back();
                 }
             }
@@ -529,22 +534,27 @@ esp_modem::command_result get_unread_sms_list_lib(esp_modem::CommandableIf *t, s
             std::string segment;
 
             // 1. Index
-            if (!std::getline(header_ss, segment, ',')) continue;
+            if (!std::getline(header_ss, segment, ','))
+                continue;
             current_sms.index = std::stoi(segment);
 
             // 2. Status
-            if (!std::getline(header_ss, segment, ',')) continue;
+            if (!std::getline(header_ss, segment, ','))
+                continue;
             current_sms.status = segment;
 
             // 3. Sender
-            if (!std::getline(header_ss, segment, ',')) continue;
+            if (!std::getline(header_ss, segment, ','))
+                continue;
             current_sms.sender = segment;
 
             // 4. Alpha (skip)
-            if (!std::getline(header_ss, segment, ',')) continue;
+            if (!std::getline(header_ss, segment, ','))
+                continue;
 
             // 5. Timestamp
-            if (!std::getline(header_ss, segment)) continue;
+            if (!std::getline(header_ss, segment))
+                continue;
             current_sms.timestamp = segment;
 
             // Remove quotes from strings
@@ -577,12 +587,14 @@ esp_modem::command_result delete_sms_lib(esp_modem::CommandableIf *t, int index)
 }
 
 /*! @copydoc SIM7670_gnss::delete_sms */
-esp_modem::command_result SIM7670_gnss::delete_sms(int index) {
+esp_modem::command_result SIM7670_gnss::delete_sms(int index)
+{
     return delete_sms_lib(dte.get(), index);
 }
 
 /*! @copydoc DCE_gnss::delete_sms */
-esp_modem::command_result DCE_gnss::delete_sms(int index) {
+esp_modem::command_result DCE_gnss::delete_sms(int index)
+{
     return device->delete_sms(index);
 }
 
@@ -661,7 +673,8 @@ esp_modem::command_result DCE_gnss::power_down()
 esp_modem::command_result SIM7670_gnss::set_dtr_pin(int gpio_num)
 {
     dtr_pin = gpio_num;
-    if (dtr_pin != -1) {
+    if (dtr_pin != -1)
+    {
         gpio_set_direction((gpio_num_t)dtr_pin, GPIO_MODE_OUTPUT);
         // Set DTR high by default to allow sleep
         gpio_set_level((gpio_num_t)dtr_pin, 1);
@@ -676,34 +689,47 @@ esp_modem::command_result DCE_gnss::set_dtr_pin(int gpio_num)
 }
 
 /*! @copydoc SIM7670_gnss::wake_via_dtr */
-esp_modem::command_result SIM7670_gnss::wake_via_dtr()
+esp_modem::command_result SIM7670_gnss::wake_via_dtr(bool wake)
 {
-    if (dtr_pin == -1) {
+    if (dtr_pin == -1)
+    {
         ESP_LOGE(TAG, "DTR pin not configured. Call set_dtr_pin() first.");
         return esp_modem::command_result::FAIL;
     }
-    if (modem_is_in_sleep_mode) {
-        ESP_LOGD(TAG, "Waking modem via DTR pin...");
-        gpio_set_level((gpio_num_t)dtr_pin, 0); // Pull DTR low to wake
-        vTaskDelay(pdMS_TO_TICKS(100));         // Wait for modem to wake up
-        gpio_set_level((gpio_num_t)dtr_pin, 1); // Set DTR high to allow sleep again
-    } else {
+    if (modem_is_in_sleep_mode)
+    {
+        if (wake)
+        {
+            ESP_LOGD(TAG, "Waking modem via DTR pin...");
+            gpio_set_level((gpio_num_t)dtr_pin, 0); // Pull DTR low to wake
+        }
+        else
+        {
+            ESP_LOGD(TAG, "sleeping modem via DTR pin...");
+            gpio_set_level((gpio_num_t)dtr_pin, 1); // Set DTR high to allow sleep again
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+        return esp_modem::command_result::OK;
+    }
+    else
+    {
         ESP_LOGD(TAG, "Wake via DTR skipped: modem sleep not enabled.");
     }
     return esp_modem::command_result::OK;
 }
 
 /*! @copydoc DCE_gnss::wake_via_dtr */
-esp_modem::command_result DCE_gnss::wake_via_dtr()
+esp_modem::command_result DCE_gnss::wake_via_dtr(bool wake)
 {
-    return device->wake_via_dtr();
+    return device->wake_via_dtr(wake);
 }
 
 esp_modem::command_result get_network_time_lib(esp_modem::CommandableIf *t, struct tm &time)
 {
     std::string str_out;
     auto ret = esp_modem::dce_commands::generic_get_string(t, "AT+CCLK?\r", str_out);
-    if (ret != esp_modem::command_result::OK) {
+    if (ret != esp_modem::command_result::OK)
+    {
         return ret;
     }
 
@@ -711,7 +737,8 @@ esp_modem::command_result get_network_time_lib(esp_modem::CommandableIf *t, stru
     std::string_view out(str_out);
     constexpr std::string_view pattern = "+CCLK: \"";
     auto pos = out.find(pattern);
-    if (pos == std::string_view::npos) {
+    if (pos == std::string_view::npos)
+    {
         return esp_modem::command_result::FAIL;
     }
     out.remove_prefix(pos + pattern.length());
@@ -723,25 +750,30 @@ esp_modem::command_result get_network_time_lib(esp_modem::CommandableIf *t, stru
     int fields = sscanf(out.data(), "%d/%d/%d,%d:%d:%d%c%d",
                         &year, &month, &day, &hour, &minute, &second, &tz_sign, &tz_offset_quarters);
 
-    if (fields < 7) { // Timezone might not be present
+    if (fields < 7)
+    { // Timezone might not be present
         return esp_modem::command_result::FAIL;
     }
 
     // Populate struct tm
     time.tm_year = year + 2000 - 1900; // tm_year is years since 1900
-    time.tm_mon = month - 1;          // tm_mon is 0-11
+    time.tm_mon = month - 1;           // tm_mon is 0-11
     time.tm_mday = day;
     time.tm_hour = hour;
     time.tm_min = minute;
     time.tm_sec = second;
 
     // If timezone is present, adjust to UTC
-    if (fields == 8) {
+    if (fields == 8)
+    {
         int tz_offset_minutes = tz_offset_quarters * 15;
-        if (tz_sign == '-') {
+        if (tz_sign == '-')
+        {
             time.tm_hour += tz_offset_minutes / 60;
             time.tm_min += tz_offset_minutes % 60;
-        } else {
+        }
+        else
+        {
             time.tm_hour -= tz_offset_minutes / 60;
             time.tm_min -= tz_offset_minutes % 60;
         }
@@ -753,9 +785,12 @@ esp_modem::command_result get_network_time_lib(esp_modem::CommandableIf *t, stru
     setenv("TZ", "", 1);
     tzset();
     time_t utc_time = mktime(&time);
-    if (original_tz) {
+    if (original_tz)
+    {
         setenv("TZ", original_tz, 1);
-    } else {
+    }
+    else
+    {
         unsetenv("TZ");
     }
     tzset();
@@ -779,10 +814,11 @@ esp_modem::command_result DCE_gnss::get_network_time(struct tm &time)
 }
 
 /*! @copydoc SIM7670_gnss::sync_system_time */
-bool SIM7670_gnss::sync_system_time(const std::string& timezone_posix)
+bool SIM7670_gnss::sync_system_time(const std::string &timezone_posix)
 {
-    struct tm timeinfo = { 0 };
-    if (get_network_time(timeinfo) != esp_modem::command_result::OK) {
+    struct tm timeinfo = {0};
+    if (get_network_time(timeinfo) != esp_modem::command_result::OK)
+    {
         ESP_LOGE(TAG, "Failed to get network time from modem");
         return false;
     }
@@ -800,7 +836,7 @@ bool SIM7670_gnss::sync_system_time(const std::string& timezone_posix)
 }
 
 /*! @copydoc DCE_gnss::sync_system_time */
-bool DCE_gnss::sync_system_time(const std::string& timezone_posix)
+bool DCE_gnss::sync_system_time(const std::string &timezone_posix)
 {
     return device->sync_system_time(timezone_posix);
 }

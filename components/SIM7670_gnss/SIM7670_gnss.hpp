@@ -160,7 +160,7 @@ public:
      * it high again to allow the modem to go back to sleep when idle.
      * @return esp_modem::command_result::OK on success, FAIL if DTR pin is not set.
      */
-    esp_modem::command_result wake_via_dtr();
+    esp_modem::command_result wake_via_dtr(bool wake);
 
     /**
      * @brief Gets the network time from the modem.
@@ -302,7 +302,7 @@ public:
      *
      * @return esp_modem::command_result::OK on success.
      */
-    esp_modem::command_result wake_via_dtr();
+    esp_modem::command_result wake_via_dtr(bool wake);
 
     /**
      * @brief Forwards the `get_network_time` command to the device.

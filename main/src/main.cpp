@@ -22,17 +22,15 @@
 #include <thread>
 #include "esp_ota_ops.h"
 #include "pppos_client.h"
+#include "system.hpp"
 
 bool simulatedMotionTrigger = false;
 bool simulatedLowPowerTrigger = false;
 bool simulatedCriticalLowPowerTrigger = false;
-bool OTA_VALIDATION = false;
-uint32_t OTA_VALIDATION_COUNTER = 0;
+bool ota_needValidation = false;
 uint64_t LastWifiOnTimestamp = 0;
-
 uint32_t RTC_DATA_ATTR motionCounter;
-
-power::WakeUpReason wu;
+uint32_t OTA_VALIDATION_COUNTER = 0;
 
 static inline bool NoMotionSince(const uint32_t timeout)
 {
@@ -42,14 +40,6 @@ static inline bool NoMotionSince(const uint32_t timeout)
 static inline bool NoVbusSince(const uint32_t timeout)
 {
     return (millis() - power::getLastVbusRemovedTs() > timeout);
-}
-
-void light_sleep(uint16_t seconds)
-{
-    Serial.printf("light sleeping for %d seconds\n", seconds);
-    esp_sleep_enable_timer_wakeup(seconds * 1000000);
-    esp_light_sleep_start();
-    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
 }
 
 void CheckMotionCount()
@@ -64,13 +54,13 @@ void CheckMotionCount()
 
 void setup()
 {
-
     uint8_t counter = 0;
     Serial.begin(115200);
-    wu = power::Get_wake_reason();
+    power::WakeUpReason wu = power::Get_wake_reason();
     power::setupPower();
+    ota_needValidation = check_rollback();
     setCpuFrequencyMhz(160);
-    StartModemDCE();
+    StartModem();
     while (1)
     {
         light_sleep(1);
@@ -97,12 +87,6 @@ void setup()
     {
         StartWifi();
         LastWifiOnTimestamp = millis();
-        counter = 0;
-        while (!Serial && counter++ < 20)
-        {
-            delay(1);
-        };
-        delay(1500);
     }
     else
     {
@@ -184,8 +168,8 @@ void setup()
         }
         }
     }
-    xTaskCreate(checkOTA_rollback, "OTA_CHECK", 2048, NULL, 1, NULL);
-    if (/*power::isPowerVBUSOn()*/ true)
+
+    if (/*power::isPowerVBUSOn()*/ true && ota_needValidation == false)
     {
         if (sdcard::checkForupdatefromSD())
         {
@@ -284,9 +268,10 @@ void loop()
     loopWifiStatus();
     loopPowerCheck();
     loopImuMotion();
-    if (OTA_VALIDATION)
+    if (ota_needValidation && OTA_VALIDATION_COUNTER++ > 2000)
     {
-        OTA_VALIDATION_COUNTER++;
+        ota_needValidation = false;
+        set_ota_valid(true);
     }
     delay(10);
 }
@@ -311,7 +296,6 @@ extern "C" void app_main(void)
             }
         }
     }
-
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_app_desc_t running_app_info;
     if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK)

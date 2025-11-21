@@ -6,24 +6,22 @@
 
 /*
  * PPPoS Client Example
-*/
+ */
 #pragma once
 
 #include <string>
 #include <memory>
+#include "mqtt_client.h"
+#include "esp_event.h"
 
 struct MqttClientHandle;
 
 /**
  * @brief Simple MQTT client wrapper
  */
-class MqttClient {
+class MqttClient
+{
 public:
-    enum class Event {
-        CONNECT,
-        DATA,
-    };
-
     MqttClient();
     ~MqttClient();
 
@@ -32,6 +30,7 @@ public:
      */
     void connect();
 
+    bool isConnected();
     /**
      * @brief Publish to topic
      * @param topic Topic to publish
@@ -67,15 +66,13 @@ public:
      * @param event_handler Event handler
      * @param event_handler_arg Event handler parameters
      */
-    void register_handler(int32_t id, esp_event_handler_t event_handler, void *event_handler_arg);
+    void register_handler(esp_mqtt_event_id_t id, esp_event_handler_t event_handler);
 
-    /**
-     * @brief Convert internal MQTT event to standard ESPEvent
-     * @param ev internal mqtt event
-     * @return corresponding esp_event id
-     */
-    static int32_t get_event(Event ev);
+protected:
+    bool connected = false;
+    static inline const char *TAG = {"MqttClient"};
 
 private:
     std::unique_ptr<MqttClientHandle> h;
+    static void handle_event(void *arg, esp_event_base_t base, int32_t event, void *data);
 };

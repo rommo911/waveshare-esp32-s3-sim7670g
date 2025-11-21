@@ -8,15 +8,36 @@
  * PPPoS Client Example
  */
 
-#include <memory>
-#include "mqtt_client.h"
 #include "mqtt_client.hpp"
 #include "esp_log.h"
+#include "esp_event.h"
+#include "esp_log.h"
+#include "Preferences.h"
+#include "nvs_flash.h"
+
 /**
  * Reference to the MQTT event base
  */
 ESP_EVENT_DECLARE_BASE(MQTT_EVENTS);
 
+String esp_mqtt_server = "mqtts://ramipi92.duckdns.org";
+uint32_t esp_mqtt_port = 8433;
+String esp_mqtt_user = "rami";
+String esp_mqtt_pass = "Rr0033141500!";
+bool check_nvs_storage()
+{
+    bool ret = true;
+    Preferences pref;
+    ret = pref.begin("mqtt", true);
+    if (ret)
+    {
+        esp_mqtt_server = pref.getString("mqtt_server", esp_mqtt_server);
+       esp_mqtt_port = pref.getUInt("mqtt_port", esp_mqtt_port);
+        esp_mqtt_user = pref.getString("mqtt_user", esp_mqtt_user);
+        esp_mqtt_pass = pref.getString("mqtt_pass", esp_mqtt_pass);
+    }
+    return ret;
+}
 /**
  * Thin wrapper around C mqtt_client
  */
@@ -24,11 +45,12 @@ struct MqttClientHandle
 {
     MqttClientHandle()
     {
+        check_nvs_storage();
         esp_mqtt_client_config_t config = {};
-        config.broker.address.uri = "mqtts://ramipi92.duckdns.org",
-        config.broker.address.port = 8433,
-        config.credentials.username = "rami",
-        config.credentials.authentication.password = "Rr0033141500!",
+        config.broker.address.uri = esp_mqtt_server.c_str(),
+        config.broker.address.port = esp_mqtt_port,
+        config.credentials.username = esp_mqtt_user.c_str(),
+        config.credentials.authentication.password = esp_mqtt_pass.c_str(),
         config.broker.verification.skip_cert_common_name_check = true,
         client = esp_mqtt_client_init(&config);
         if (!client)
@@ -50,6 +72,7 @@ struct MqttClientHandle
  */
 MqttClient::MqttClient() : h(std::unique_ptr<MqttClientHandle>(new MqttClientHandle()))
 {
+    esp_mqtt_client_register_event(h->client, MQTT_EVENT_ANY, MqttClient::handle_event, this);
 }
 
 void MqttClient::connect()
@@ -58,20 +81,11 @@ void MqttClient::connect()
         esp_mqtt_client_start(h->client);
 }
 
-int32_t MqttClient::get_event(MqttClient::Event ev)
-{
-    switch (ev)
-    {
-    case Event::CONNECT:
-    {
-        return MQTT_EVENT_CONNECTED;
-    }
-    case Event::DATA:
-        return MQTT_EVENT_DATA;
-    }
-    return -1;
-}
 
+bool MqttClient::isConnected()
+{
+    return this->connected;
+}
 int MqttClient::publish(const std::string &topic, const std::string &data, int qos)
 {
     if (h->client != nullptr)
@@ -104,14 +118,51 @@ std::string MqttClient::get_data(void *event_data)
     return std::string(event->data, event->data_len);
 }
 
-void MqttClient::register_handler(int32_t event_id, esp_event_handler_t event_handler, void *arg)
+MqttClient::~MqttClient()
 {
     if (h->client != nullptr)
-        ESP_ERROR_CHECK(esp_mqtt_client_register_event(h->client, MQTT_EVENT_ANY, event_handler, arg));
+    {
+        esp_mqtt_client_stop(h->client);
+        esp_mqtt_client_disconnect(h->client);
+        esp_mqtt_client_unregister_event(h->client, MQTT_EVENT_ANY, MqttClient::handle_event);
+        esp_mqtt_client_destroy(h->client);
+    }
 }
 
-MqttClient::~MqttClient() 
+void MqttClient::register_handler(esp_mqtt_event_id_t id, esp_event_handler_t event_handler)
 {
-    if (h->client != nullptr)
-        esp_mqtt_client_destroy(h->client);
+    if (h->client == nullptr)
+        return;
+    esp_mqtt_client_register_event(h->client, id, event_handler, this);
+}
+
+void MqttClient::handle_event(void *arg, esp_event_base_t base, int32_t event, void *data)
+{
+    auto *mqtt_client = static_cast<MqttClient *>(arg);
+    if (base != MQTT_EVENTS)
+        return;
+    if (event == MQTT_EVENT_CONNECTED)
+    {
+        mqtt_client->connected = true;
+        return;
+    }
+    if (event == MQTT_EVENT_DISCONNECTED)
+    {
+        mqtt_client->connected = false;
+        return;
+    }
+    if (event == MQTT_EVENT_SUBSCRIBED)
+    {
+        return;
+    }
+    if (event == MQTT_EVENT_UNSUBSCRIBED)
+    {
+        return;
+    }
+
+    if (event == MQTT_EVENT_DATA)
+    {
+        ESP_LOGI(TAG, " TOPIC: %s", mqtt_client->get_topic(data).c_str());
+        ESP_LOGI(TAG, " DATA: %s", mqtt_client->get_data(data).c_str());
+    }
 }
