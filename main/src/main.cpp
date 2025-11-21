@@ -16,7 +16,6 @@
 #include "led/led.hpp"
 #include "imu6500/imu_DMP6.hpp"
 #include "wifi/wifi.hpp"
-#include "modem/modem.hpp"
 #include "Preferences.h"
 #include "nvs_flash.h"
 #include <thread>

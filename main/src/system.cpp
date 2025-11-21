@@ -65,10 +65,12 @@ bool check_rollback()
         case ESP_OTA_IMG_ABORTED:
         {
             mqttLogger.println("ESP_OTA_IMG_ABORTED");
+            break;
         }
         case ESP_OTA_IMG_VALID:
         {
             mqttLogger.println("ESP_OTA_IMG_VALID");
+            break;
         }
         default:
             break;
