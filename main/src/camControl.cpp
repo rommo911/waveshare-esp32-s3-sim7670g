@@ -1,6 +1,7 @@
 #include "pins.hpp"
 #include "Preferences.h"
 #include "wifi/wifi.hpp"
+#include "driver/rtc_io.h"
 
 static bool CamisOn = false;
 static uint64_t lastCamOnTs = 0;
@@ -50,6 +51,7 @@ void turnOnCamera()
         lastCamOnTs = millis();
         digitalWrite(CAM_PIN, HIGH);
         CamisOn = true;
+        rtc_gpio_hold_en(CAM_PIN);
     }
 }
 void turnOffCamera()
@@ -60,6 +62,7 @@ void turnOffCamera()
         lastCamOffTs = millis();
         digitalWrite(CAM_PIN, LOW);
         CamisOn = false;
+        rtc_gpio_hold_en(CAM_PIN);
     }
 }
 

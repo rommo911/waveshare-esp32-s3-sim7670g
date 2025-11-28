@@ -7,10 +7,12 @@ idf_component_register(SRC_DIRS
                                 "./src/imu6500/interface"
                                 "./src/wifi"
                                 "./src/power"
+                                "./src/carBattery"
                                 "./src/idf_modem"
                                 "./src"
                         INCLUDE_DIRS 
                                 "./src/power"
+                                "./src/carBattery"
                                 "./src/led"
                                 "./src/imu6500"
                                 "./src/imu6500/interface"

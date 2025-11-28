@@ -46,6 +46,22 @@ void checkOTA_rollback(void *)
     }
 }
 
+
+bool GetsystemTimeSynced()
+{
+     // check if time not sync
+    time_t time_now;
+    char strftime_buf[64];
+    struct tm timeinfo;
+    time(&time_now);
+    localtime_r(&time_now, &timeinfo);
+    bool time_synced = timeinfo.tm_year + 1900 >= 2025;
+    strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+    Serial.printf("Current system time: %s -> %s \n", strftime_buf, time_synced ? "time synced" : "time not sync");
+    return time_synced;
+}
+
+
 bool check_rollback()
 {
     ot_validation_event_group = xEventGroupCreate();

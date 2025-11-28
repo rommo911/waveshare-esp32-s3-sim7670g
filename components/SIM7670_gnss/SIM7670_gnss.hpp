@@ -42,7 +42,6 @@ struct sms_t {
 enum class functionality_level_t {
     MINIMUM = 0,    /*!< Minimum functionality (AT+CFUN=0). RF is disabled, but SIM is accessible. Ideal for low-power states where network is not needed. */
     FULL = 1,       /*!< Full functionality (AT+CFUN=1). Default mode with RF enabled. */
-    FLIGHT_MODE = 4 /*!< Flight mode (AT+CFUN=4). RF is disabled, but SIM remains active. */
 };
 
 /**
@@ -134,7 +133,7 @@ public:
      * @param enable True to enable sleep mode (AT+CSCLK=1), false to disable (AT+CSCLK=0).
      * @return esp_modem::command_result::OK on success.
      */
-    esp_modem::command_result enable_sleep_mode(bool enable);
+    esp_modem::command_result enable_terminal_sleep_mode(bool enable);
 
     /**
      * @brief Powers down the modem.
@@ -170,16 +169,6 @@ public:
      * @return esp_modem::command_result::OK on success.
      */
     esp_modem::command_result get_network_time(struct tm &time);
-
-    /**
-     * @brief Syncs the ESP32 system time with the modem's network time.
-     *
-     * This function fetches the UTC time from the modem, sets the system clock,
-     * and configures the specified time zone.
-     * @param timezone_posix POSIX string for the desired timezone (e.g., "CET-1CEST,M3.5.0,M10.5.0/3").
-     * @return True if time was synced successfully, false otherwise.
-     */
-    bool sync_system_time(const std::string& timezone_posix);
 
     /**
      * @brief Configures the behavior of the Ring Indicator (RI) pin.
@@ -275,12 +264,12 @@ public:
     esp_modem::command_result set_functionality_level(functionality_level_t level);
 
     /**
-     * @brief Forwards the `enable_sleep_mode` command to the device.
+     * @brief Forwards the `enable_terminal_sleep_mode` command to the device.
      *
      * @param enable True to enable sleep mode, false to disable.
      * @return esp_modem::command_result::OK on success.
      */
-    esp_modem::command_result enable_sleep_mode(bool enable);
+    esp_modem::command_result enable_terminal_sleep_mode(bool enable);
 
     /**
      * @brief Forwards the `power_down` command to the device.
@@ -311,14 +300,6 @@ public:
      * @return esp_modem::command_result::OK on success.
      */
     esp_modem::command_result get_network_time(struct tm &time);
-
-    /**
-     * @brief Forwards the `sync_system_time` command to the device.
-     *
-     * @param timezone_posix POSIX string for the desired timezone.
-     * @return True if time was synced successfully, false otherwise.
-     */
-    bool sync_system_time(const std::string& timezone_posix);
 
     /**
      * @brief Forwards the `set_ring_indicator_mode` command to the device.

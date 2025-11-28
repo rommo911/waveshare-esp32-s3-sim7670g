@@ -103,7 +103,7 @@ namespace imu6500_dmp
     {
     case MPU6500_INTERRUPT_MOTION:
     {
-      Serial.println("mpu6500: irq motion.");
+      //Serial.println("mpu6500: irq motion.");
       xSemaphoreTake(getterSem, pdMS_TO_TICKS(15));
       MPU_MTION_Interrupt = true;
       globalMotion.motionInterrupt = true;
@@ -224,10 +224,10 @@ namespace imu6500_dmp
       }
     }
     detachInterrupt(MOTION_INTRRUPT_PIN);
-    pinMode(MOTION_INTRRUPT_PIN, INPUT_PULLUP);
+    pinMode(MOTION_INTRRUPT_PIN, INPUT);
     attachInterrupt(MOTION_INTRRUPT_PIN, IMUDataInterrupt, FALLING);
     imu_dmp_loop = true;
-    xTaskCreate(imu_Interrupt_loop, "IMU", 8192, NULL, 1, NULL);
+    xTaskCreate(imu_Interrupt_loop, "IMU", 4096, NULL, 3, NULL);
 
     return true;
   }

@@ -20,8 +20,9 @@
 #include "nvs_flash.h"
 #include <thread>
 #include "esp_ota_ops.h"
-#include "pppos_client.h"
+#include "pppos_client.hpp"
 #include "system.hpp"
+#include "CarBattery/CarBattery.hpp"
 
 bool simulatedMotionTrigger = false;
 bool simulatedLowPowerTrigger = false;
@@ -29,7 +30,9 @@ bool simulatedCriticalLowPowerTrigger = false;
 bool ota_needValidation = false;
 uint64_t LastWifiOnTimestamp = 0;
 uint32_t RTC_DATA_ATTR motionCounter;
+uint32_t RTC_DATA_ATTR motionOngoing;
 uint32_t OTA_VALIDATION_COUNTER = 0;
+CarBattery carBattery;
 
 static inline bool NoMotionSince(const uint32_t timeout)
 {
@@ -46,27 +49,173 @@ void CheckMotionCount()
     if (motionCounter > 0)
     {
         motionCounter = 0;
-        led::start_blink(0, led::_rgb(50, 50, 50), led::_rgb(255, 0, 0), 250, 150, 5000);
+        builtinLed.setBlink(0, LedStrip::_rgb(50, 50, 50), LedStrip ::_rgb(255, 0, 0), 250, 150, 10);
         delay(5000);
+    }
+}
+
+void handleWakeup()
+{
+    power::WakeUpReason_t wu = power::Get_wake_reason();
+    switch (wu)
+    {
+    case power::WakeUpReason_t::UNKNOWN:
+    {
+        mqttLogger.println("wake UNKNOWN...");
+        motionCounter = 0;
+        break;
+    }
+    case power::WakeUpReason_t::START:
+    {
+        mqttLogger.println("wake FROM START...");
+        break;
+    }
+    case power::WakeUpReason_t::MOTION:
+    {
+        mqttLogger.println("wake FROM MOTION");
+        builtinLed.setBlink(0, LedStrip::_rgb(0, 0, 100), 0, 200, 200, 0, 1000, LedStrip::Priority::NOTIFICATION);
+        delay(1000);
+        if (power::isBatLowLevel())
+        {
+            builtinLed.setSolid(0, LedStrip::_rgb(0, 5, 5));
+            // led::set_solid(1, led::_rgb(5, 0, 0));
+        }
+        else
+        {
+            builtinLed.setSolid(0, LedStrip::_rgb(0, 20, 20));
+            // led::set_solid(1, led::_rgb(20, 0, 0));
+        }
+        if (!power::isPowerVBUSOn())
+        {
+            // power::Sleep_EnablePinWakeup(power::WakeUpPin_t::START_PIN);
+            if (power::isBatLowLevel())
+            {
+                power::DeepSleep(); // dont keep waking up for new motion !
+            }
+            else
+            {
+                if (motionOngoing == false)
+                {
+                    motionOngoing = true;
+                    modem.init();
+                    modem.sendSMS("0758829590", "Motion detected!");
+                    modem.sleep(ModemSim7670::SleepMode_t::INTERRUPT_READY);
+                }
+                power::Sleep_EnableTimer(power::AFTER_MOTION, getNoMotionTimeout());
+                power::Sleep_EnablePinWakeup(power::WakeUpPin_t::MOTION_PIN);
+                power::DeepSleep(); // wake up and reset timer if new motion is detected before expires
+            }
+        }
+
+        break;
+    }
+    case power::WakeUpReason_t::TIMER:
+    {
+        mqttLogger.println("wake FROM TIMER");
+        if (!imu6500_dmp::getMotion() && !power::isPowerVBUSOn())
+        {
+            switch (power::getTimerWakeReason())
+            {
+            case power::SLEEP_SNAP_SHOT:
+            {
+                builtinLed.setFade(0, LedStrip::_rgb(50, 50, 50), 0, 500, 0, 5000);
+                mqttLogger.println("wake FROM Timer for snapshot...");
+                delay(5000);
+                break;
+            }
+            case power::AFTER_MOTION:
+            {
+                motionCounter++;
+                motionOngoing = false;
+                builtinLed.setFade(0, LedStrip::_rgb(50, 50, 50), 0, 500, 0, 5000);
+                mqttLogger.println("wake FROM Timer after no motion .. turn off Cam");
+                delay(500);
+                if (power::isBatLowLevel() == false)
+                {
+                    // here try wakeup modem and send SMS
+                    modem.init();
+                    auto sms = std::string("motion detection done, counter=") + std::to_string(motionCounter) + std::string(". sleeping.");
+                    modem.sendSMS("0758829590", sms.c_str());
+                    modem.sleep(ModemSim7670::SleepMode_t::SLEEP);
+                }
+                break;
+            }
+            default:
+            {
+                break;
+            }
+            }
+            turnOffCamera();
+            if (power::isBatLowLevel())
+                builtinLed.setSolid(0, LedStrip::_rgb(2, 0, 0)); // turn off led before sleep
+            else
+                builtinLed.setSolid(0, LedStrip::_rgb(0, 0, 2)); // turn off led before sleep
+            power::Sleep_EnableTimer(power::SLEEP_SNAP_SHOT, getSnapShotTime());
+            power::Sleep_EnablePinWakeup(power::WakeUpPin_t::MOTION_PIN);
+            // power::Sleep_EnablePinWakeup(power::WakeUpPin_t::START_PIN);
+            power::DeepSleep();
+        }
+        break;
+    }
+    case power::WakeUpReason_t::MOEDM:
+    {
+        if (power::isBatLowLevel() == false)
+        {
+            // here try wakeup modem and send SMS
+            modem.init();
+            std::list<sms_t> sms_list;
+            modem.GetDce()->get_unread_sms_list(sms_list);
+            if (sms_list.size() > 0)
+            {
+                for (auto &sms : sms_list)
+                {
+                    ESP_LOGI("sms", " sms index %d ts : %d received from %s , content %s  ", sms.index, sms.timestamp, sms.sender.c_str(), sms.content.c_str());
+                    if (sms.sender == "0758829590")
+                    {
+                        std::string response = " respond wake up after got " + sms.content;
+                        modem.sendSMS("0758829590", response.c_str());
+                        modem.EnableGnss(true);
+                        power::light_sleep(30);
+                        sim76xx_gps_t gps;
+                        bool ret = modem.get_gnss(gps, 60);
+                        if (ret)
+                        {
+                            response = gps.pretty_string();
+                            modem.sendSMS("0758829590", response.c_str());
+                        }
+                        else
+                        {
+                            modem.sendSMS("0758829590", "no gps fix");
+                        }
+                    }
+                    modem.GetDce()->delete_sms(sms.index);
+                }
+            }
+        }
+        break;
+    }
+    default:
+    {
+        mqttLogger.println("wake FROM unknwon");
+        break;
+    }
     }
 }
 
 void setup()
 {
-    uint8_t counter = 0;
+    // uint8_t counter = 0;
     Serial.begin(115200);
-    power::WakeUpReason wu = power::Get_wake_reason();
     power::setupPower();
+    builtinLed.begin();
+    NotifyLed.begin();
+    carBattery.begin();
     ota_needValidation = check_rollback();
-    setCpuFrequencyMhz(160);
-    StartModem();
-    while (1)
-    {
-        light_sleep(1);
-    }
-    // Serial.setTxBufferSize(512);
-    led::led_init();
-    led::set_solid(0, led::_rgb(0, 0, 30));
+    delay(1500);
+    setCpuFrequencyMhz(80);
+    builtinLed.setSolid(0, LedStrip::_rgb(0, 0, 25), LedStrip::Priority::NORMAL);
+    NotifyLed.setSolid(0, LedStrip::_rgb(0, 0, 10), LedStrip::Priority::NORMAL);
+    NotifyLed.setSolid(1, LedStrip::_rgb(0, 0, 5), LedStrip::Priority::NORMAL);
     turnOnCamera();
     loadTimingPref();
     if (imu6500_dmp::imu_setup(imu6500_dmp::WOM))
@@ -76,9 +225,9 @@ void setup()
     else
     {
         Serial.println("IMU setup failed ");
-        led::start_blink(0, led::_rgb(255, 0, 0));
+        builtinLed.setBlink(0, LedStrip::_rgb(255, 0, 0), 0, 200, 200, 0, 5000, LedStrip::Priority::ALERT);
         delay(5000);
-        led::stop_led(0);
+        builtinLed.clear(0);
         delay(50);
         /// ESP.restart();
     }
@@ -89,86 +238,9 @@ void setup()
     }
     else
     {
-        switch (wu)
-        {
-        case power::WakeUpReason::UNKNOWN:
-        {
-            mqttLogger.println("wake UNKNOWN...");
-            motionCounter = 0;
-            break;
-        }
-        case power::WakeUpReason::START:
-        {
-            mqttLogger.println("wake FROM START...");
-            break;
-        }
-        case power::WakeUpReason::MOTION:
-        {
-            mqttLogger.println("wake FROM MOTION");
-            led::start_blink(0, led::_rgb(0, 0, 100), 0, 200, 200, 2000);
-            delay(1500);
-            if (power::isBatLowLevel())
-            {
-                led::set_solid(0, led::_rgb(0, 5, 5));
-                // led::set_solid(1, led::_rgb(5, 0, 0));
-            }
-            else
-            {
-                led::set_solid(0, led::_rgb(0, 20, 20));
-                // led::set_solid(1, led::_rgb(20, 0, 0));
-            }
-            if (!power::isPowerVBUSOn())
-            {
-                if (power::isBatLowLevel())
-                {
-                    power::DeepSleepWith_IMU_Timer_Wake(power::AFTER_MOTION, getNoMotionTimeout()); // dont keep waking up for new motion !
-                }
-                else
-                {
-                    power::DeepSleepWith_IMU_Timer_Wake(power::AFTER_MOTION, getNoMotionTimeout()); // wake up and reset timer if new motion is detected before expires
-                }
-            }
-
-            break;
-        }
-        case power::WakeUpReason::TIMER:
-        {
-            mqttLogger.println("wake FROM TIMER");
-            if (!imu6500_dmp::getMotion() && !power::isPowerVBUSOn())
-            {
-                if (power::getSleepCause() == power::SLEEP_SNAP_SHOT)
-                {
-                    led::start_fade(0, led::_rgb(50, 50, 50), 0, 500, 4);
-                    mqttLogger.println("wake FROM Timer for snapshot...");
-                    delay(5000);
-                }
-                else
-                {
-                    led::start_blink(0, led::_rgb(50, 50, 50), 0, 200, 200, 500);
-                    mqttLogger.println("wake FROM Timer after no motion .. turn off Cam");
-                    delay(500);
-                    motionCounter++;
-                }
-                turnOffCamera();
-                if (power::isBatLowLevel())
-                    led::set_solid(0, led::_rgb(2, 0, 0)); // turn off led before sleep
-                else
-                    led::set_solid(0, led::_rgb(0, 0, 2)); // turn off led before sleep
-
-                power::DeepSleepWith_IMU_Timer_Wake(power::SLEEP_SNAP_SHOT, getSnapShotTime());
-            }
-
-            break;
-        }
-        default:
-        {
-            mqttLogger.println("wake FROM unknwon");
-            break;
-        }
-        }
+        handleWakeup();
     }
-
-    if (/*power::isPowerVBUSOn()*/ true && ota_needValidation == false)
+    if (power::isPowerVBUSOn() && ota_needValidation == false)
     {
         if (sdcard::checkForupdatefromSD())
         {
@@ -184,25 +256,28 @@ void loopPowerCheck()
     if (power::isPowerVBUSOn())
     {
         const uint8_t percent = power::getCellPercent();
-        led::set_solid(0, led::batteryColor(percent));
+        builtinLed.setSolid(0, LedStrip::batteryColor(percent));
         CheckMotionCount();
         return;
     }
     if (power::isBatCriticalLevel())
     {
         mqttLogger.printf("Battery critical level detected in main loop \n");
-        led::start_blink(0, led::_rgb(20, 0, 0), 0, 75, 125, 500);
+        builtinLed.setBlink(0, LedStrip::_rgb(20, 0, 0), 0, 75, 125, 500);
         delay(500);
-        led::stop_led(0);
-        power::DeepSleepWith_PMU_Wake();
+        builtinLed.clear(0);
+        power::Sleep_DisableTimer();
+        power::Sleep_EnablePinWakeup(power::WakeUpPin_t::START_PIN);
+        power::DeepSleep();
     }
-    if (power::isBatLowLevel() || simulatedLowPowerTrigger)
+    if (power::isBatLowLevel())
     {
-        simulatedLowPowerTrigger = false;
         mqttLogger.printf("Battery low level detected in main loop \n");
-        led::set_solid(0, led::_rgb(2, 0, 0)); // turn off led before sleep
+        builtinLed.setSolid(0, LedStrip::_rgb(2, 0, 0)); // turn off led before sleep
         delay(30);
-        power::DeepSleepWith_IMU_Timer_Wake(power::AFTER_ON);
+        // power::Sleep_EnablePinWakeup(power::WakeUpPin_t::START_PIN);
+        power::Sleep_EnablePinWakeup(power::WakeUpPin_t::MOTION_PIN);
+        power::DeepSleep();
     }
 }
 
@@ -211,9 +286,10 @@ void loopImuMotion()
 {
     if (imu6500_dmp::getMotion())
     {
-        if (!waitForCarhelper)
-            led::start_blink(0, led::_rgb(0, 0, 100), 0, 150, 200, 150); // turn off led before sleep
+        // if (!waitForCarhelper)
+        builtinLed.setBlink(0, LedStrip::_rgb(0, 0, 100), 0, 100, 150, 1, 0, LedStrip::Priority::NOTIFICATION); // turn off led before sleep
         delay(150);
+        Serial.println("motion detected");
     }
     if (power::isPowerVBUSOn())
     {
@@ -225,14 +301,17 @@ void loopImuMotion()
     {
         mqttLogger.println("starting secure mode");
         turnOffCamera();
-        led::set_solid(0, led::_rgb(0, 0, 2)); //
-        power::DeepSleepWith_IMU_Timer_Wake(power::SLEEP_SNAP_SHOT, getSnapShotTime());
+        builtinLed.setSolid(0, LedStrip::_rgb(0, 0, 2)); //
+        power::Sleep_EnableTimer(power::SLEEP_SNAP_SHOT, getSnapShotTime());
+        // power::Sleep_EnablePinWakeup(power::WakeUpPin_t::START_PIN);
+        power::Sleep_EnablePinWakeup(power::WakeUpPin_t::MOTION_PIN);
+        power::DeepSleep();
     }
     else
     {
         if (waitForCarhelper) // only once
         {
-            led::start_blink(0, led::batteryColor(power::getCellPercent()), 0, 100, 2500, 120 * 1000); // crete blink patter to inform user its waiting
+            builtinLed.setBlink(0, LedStrip::batteryColor(power::getCellPercent()), 0, 100, 2500, 0, 120U * 1000U, LedStrip::Priority::NOTIFICATION); // crete blink patter to inform user its waiting
             waitForCarhelper = false;
             mqttLogger.println("waiting for some time after vbus removed");
         }

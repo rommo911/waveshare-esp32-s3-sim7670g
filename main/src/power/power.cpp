@@ -25,11 +25,11 @@ namespace power
 
     uint64_t VbusInsertTimestamp = 0;
     uint64_t VbusRemovedTimestamp = 0;
-
+    uint64_t wakeup_mask = 0;
     float cellVoltage = 0.0f, percent = 0.0f, rate = 0.0f;
     esp_sleep_wakeup_cause_t wakeup_reason;
 
-    static RTC_DATA_ATTR TimerSleepCause_t _timerSleepCause;
+    static RTC_DATA_ATTR TimerWakeReason_t _timerWakeReason;
     static RTC_DATA_ATTR bool PMU_WasSleeping;
     EventGroupHandle_t powerInterruptGroup;
     static const uint8_t BUTTON_EVENT = 0b01;
@@ -53,11 +53,6 @@ namespace power
         attachInterrupt(BOOT_INPUT_PIN, interruptButton, ONLOW);
         pinMode(BOOT_INPUT_PIN, INPUT_PULLUP);
         pinMode(VBUS_INPUT_PIN, INPUT_PULLDOWN);
-        isCharging = digitalRead(VBUS_INPUT_PIN);
-        if (isCharging)
-        {
-            VbusInsertTimestamp = millis();
-        }
         Wire.setPins(I2C_SDA_POWER, I2C_SCL_POWER);
         if (!PMU.begin(&Wire, false))
         {
@@ -144,21 +139,9 @@ namespace power
             {
                 rate = PMU.chargeRate();
                 percent = PMU.cellPercent();
-                bool _isCharging = (digitalRead(VBUS_INPUT_PIN) == 1);
-                if (isCharging != _isCharging)
-                {
-                    if (!isCharging)
-                    {
-                        VbusRemovedTimestamp = millis();
-                    }
-                    else
-                    {
-                        VbusInsertTimestamp = millis();
-                    }
-                }
                 isBatteryCriticalLevel = percent <= BATTERY_CRITICAL_THRESH;
                 isBatteryLowLevel = percent <= BATTERY_LOW_THRESH;
-                mqttLogger.printf(" percent %.2f,  cell %.3f v , rate %.2f %%/h\n", percent, cellVoltage, rate);
+                mqttLogger.printf(" percent %.2f,  cell %.3f v , rate %.2f %%/h \n\r", percent, cellVoltage, rate);
             }
         }
     }
@@ -318,39 +301,9 @@ namespace power
         return isBatteryCriticalLevel;
     }
 
-    void DeepSleepWith_PMU_Wake()
+    void DeepSleep()
     {
         // Configure wakeup source: IMU interrupt pin
-        detachInterrupt(VBUS_INPUT_PIN);
-        detachInterrupt(MOTION_INTRRUPT_PIN);
-        rtc_gpio_hold_en(MOTION_INTRRUPT_PIN);
-        rtc_gpio_hold_en(VBUS_INPUT_PIN);
-        rtc_gpio_hold_en(CAM_PIN);
-        uint64_t wakeup_mask = (1ULL << VBUS_INPUT_PIN);
-        String str = "Going to sleep now DeepSleepWith_PMU_Wake with mask 0b" + String(wakeup_mask, BIN);
-        mqttLogger.printf(str.c_str());
-        ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup_io(wakeup_mask, ESP_EXT1_WAKEUP_ANY_HIGH));
-        PMU.hibernate();
-        Serial.flush();
-        delay(5);
-        esp_deep_sleep_start();
-    }
-
-    void DeepSleepWith_IMU_Timer_Wake(TimerSleepCause_t cause, uint32_t ms)
-    {
-        if (OTA_VALIDATION)
-        {
-            return;
-        }
-        // Configure wakeup source: IMU interrupt pin
-        detachInterrupt(VBUS_INPUT_PIN);
-        detachInterrupt(MOTION_INTRRUPT_PIN);
-        rtc_gpio_hold_en(MOTION_INTRRUPT_PIN);
-        rtc_gpio_hold_en(VBUS_INPUT_PIN);
-        rtc_gpio_hold_en(CAM_PIN);
-        uint64_t wakeup_mask = (1ULL << MOTION_INTRRUPT_PIN) | (1ULL << VBUS_INPUT_PIN);
-        String str = "Going to sleep now DeepSleepWith_IMU_Timer_Wake with mask 0b" + String(wakeup_mask, BIN) ;
-        mqttLogger.printf(str.c_str());
         bool shouldPMUSLeep = !(percent == 0);
         if (shouldPMUSLeep && isBatteryLowLevel)
         {
@@ -363,67 +316,73 @@ namespace power
         {
             PMU.hibernate();
         }
-        esp_sleep_enable_ext1_wakeup_io(wakeup_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
-        if (ms > 0)
-        {
-            mqttLogger.printf("with timer %d seconds , reason %s", ms / 1000, GetTimerSleepCause(cause));
-            esp_sleep_enable_timer_wakeup(1000 * ms);
-            _timerSleepCause = cause;
-        }
         Serial.flush();
         delay(10);
         esp_deep_sleep_start();
     }
 
-    void DeepSleepWith_PMU_Timer_Wake(TimerSleepCause_t cause, uint32_t ms)
+    void Sleep_DisableTimer()
     {
-        if (OTA_VALIDATION)
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+        _timerWakeReason = NA;
+    }
+
+    void Sleep_EnableTimer(TimerWakeReason_t cause, uint32_t ms)
+    {
+        if (ms > 100)
         {
-            return;
+            mqttLogger.printf("with timer %d seconds , reason %s", ms / 1000, GetTimerSleepCause(cause));
+            esp_sleep_enable_timer_wakeup(1000 * ms);
+            _timerWakeReason = cause;
         }
-        mqttLogger.println("Entering deep sleep mode with timer PMU wakeup");
-        // Configure wakeup source: IMU interrupt pin
-        detachInterrupt(VBUS_INPUT_PIN);
-        detachInterrupt(MOTION_INTRRUPT_PIN);
-        rtc_gpio_hold_en(MOTION_INTRRUPT_PIN);
-        rtc_gpio_hold_en(VBUS_INPUT_PIN);
-        rtc_gpio_hold_en(CAM_PIN);
-        uint64_t wakeup_mask = (1ULL << VBUS_INPUT_PIN);
-        String str = "Going to sleep now with mask " + String(wakeup_mask, BIN);
+    }
+
+    void Sleep_DisableAllWakeup()
+    {
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    }
+
+    void Sleep_DisableTimerWakeup()
+    {
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+    }
+
+    void Sleep_DisablePinWakeup()
+    {
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT1);
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+    }
+
+    void Sleep_EnablePinWakeup(WakeUpPin_t pin)
+    {
+        detachInterrupt(pin);
+        rtc_gpio_hold_en((gpio_num_t)(pin));
+        wakeup_mask |= (1ULL << (gpio_num_t)pin);
+        String str = "sleep with mask " + String(wakeup_mask, BIN);
         mqttLogger.printf(str.c_str());
-        bool shouldPMUSLeep = !(percent == 0);
-        if (shouldPMUSLeep && isBatteryLowLevel)
-        {
-            mqttLogger.println("PMU SLEEP");
-            PMU_WasSleeping = true;
-            PMU.enableSleep(true);
-            PMU.sleep(true);
-        }
-        else
-        {
-            PMU.hibernate();
-        }
-        esp_sleep_enable_ext1_wakeup_io(wakeup_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
-        if (ms > 0)
-        {
-            mqttLogger.printf("with timer %d seconds , reason %s", ms / 1000, GetTimerSleepCause(cause));
-            esp_sleep_enable_timer_wakeup(1000 * ms);
-            _timerSleepCause = cause;
-        }
+        esp_sleep_enable_ext1_wakeup_io(wakeup_mask, ESP_EXT1_WAKEUP_ANY_LOW);
+    }
+
+    void light_sleep(uint16_t seconds)
+    {
+        Serial.printf("light sleeping for %d seconds\n", seconds);
         Serial.flush();
-        delay(10);
-        esp_deep_sleep_start();
+        esp_sleep_enable_timer_wakeup(seconds * 1000000);
+        auto now = millis();
+        esp_light_sleep_start();
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+        Serial.printf("woke up from light sleep after %ld ms\n", (millis() - now));
     }
 
-    TimerSleepCause_t getSleepCause()
+    TimerWakeReason_t getTimerWakeReason()
     {
-        return _timerSleepCause;
+        return _timerWakeReason;
     }
 
-    WakeUpReason Get_wake_reason()
+    WakeUpReason_t Get_wake_reason()
     {
-        static WakeUpReason wakeUpReason = WakeUpReason::UNKNOWN;
-        if (wakeUpReason != WakeUpReason::UNKNOWN)
+        static WakeUpReason_t wakeUpReason = WakeUpReason_t::UNKNOWN;
+        if (wakeUpReason != WakeUpReason_t::UNKNOWN)
         {
             return wakeUpReason;
         }
@@ -436,13 +395,13 @@ namespace power
             if (wakeup_pin_mask & ((uint64_t)1 << MOTION_INTRRUPT_PIN))
             {
                 Serial.println("Wakeup cause detected: MPU motion interrupt");
-                wakeUpReason = WakeUpReason::MOTION;
+                wakeUpReason = WakeUpReason_t::MOTION;
                 break;
             }
             if (wakeup_pin_mask & ((uint64_t)1 << VBUS_INPUT_PIN))
             {
                 Serial.println("Wakeup cause detected: PMU interrupt");
-                wakeUpReason = WakeUpReason::START;
+                wakeUpReason = WakeUpReason_t::START;
                 break;
             }
             else
@@ -453,13 +412,19 @@ namespace power
         }
         case ESP_SLEEP_WAKEUP_TIMER:
         {
-            wakeUpReason = WakeUpReason::TIMER;
+            wakeUpReason = WakeUpReason_t::TIMER;
             Serial.println("Wakeup cause detected: TIMER");
+            break;
+        }
+        case ESP_SLEEP_WAKEUP_GPIO:
+        {
+            wakeUpReason = WakeUpReason_t::MOEDM;
+            Serial.println("Wakeup cause detected: GPIO");
             break;
         }
         default:
         {
-            wakeUpReason = WakeUpReason::UNKNOWN;
+            wakeUpReason = WakeUpReason_t::UNKNOWN;
             break;
         }
         }

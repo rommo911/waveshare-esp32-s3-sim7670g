@@ -497,16 +497,21 @@ esp_modem::command_result DCE_gnss::set_sms_text_mode(bool text_mode)
 esp_modem::command_result get_unread_sms_list_lib(esp_modem::CommandableIf *t, std::list<sms_t> &sms_list)
 {
     std::string str_out;
-    auto ret = esp_modem::dce_commands::generic_get_string(t, "AT+CMGL=\"REC UNREAD\"\r", str_out, 5000);
+    ESP_LOGI(TAG, "asking SMS unread list");
+    set_sms_text_mode_lib(t, true);
+    auto ret = esp_modem::dce_commands::at_raw(t, "AT+CMGL=\"REC UNREAD\"\r", str_out, "OK", "FAIL", 5000); // esp_modem::dce_commands::generic_get_string(t, "AT+CMGL=\"REC UNREAD\"\r", str_out, 5000);
     if (ret != esp_modem::command_result::OK)
     {
+        ESP_LOGE(TAG, "get sms failed, ret = %d , str = %s", (int)ret, str_out.c_str());
         return ret;
     }
 
     if (str_out.find("OK") == std::string::npos)
     {
+        ESP_LOGE(TAG, "get sms failed not find OK, ret = %d , strout=%s", (int)ret, str_out.c_str());
         return esp_modem::command_result::FAIL;
     }
+    //ESP_LOGI(TAG, "get sms  strout=%s", str_out.c_str());
 
     sms_list.clear();
     std::stringstream ss(str_out);
@@ -556,16 +561,21 @@ esp_modem::command_result get_unread_sms_list_lib(esp_modem::CommandableIf *t, s
             if (!std::getline(header_ss, segment))
                 continue;
             current_sms.timestamp = segment;
-
             // Remove quotes from strings
             current_sms.status.erase(std::remove(current_sms.status.begin(), current_sms.status.end(), '"'), current_sms.status.end());
             current_sms.sender.erase(std::remove(current_sms.sender.begin(), current_sms.sender.end(), '"'), current_sms.sender.end());
             current_sms.timestamp.erase(std::remove(current_sms.timestamp.begin(), current_sms.timestamp.end(), '"'), current_sms.timestamp.end());
-
             sms_list.push_back(current_sms);
         }
     }
-
+    if (sms_list.size() > 0)
+    {
+        ESP_LOGI(TAG, "got %d unread sms ", (int)sms_list.size());
+    }
+    else
+    {
+        ESP_LOGI(TAG, "no unread sms found");
+    }
     return esp_modem::command_result::OK;
 }
 
@@ -583,7 +593,13 @@ esp_modem::command_result DCE_gnss::get_unread_sms_list(std::list<sms_t> &sms_li
 
 esp_modem::command_result delete_sms_lib(esp_modem::CommandableIf *t, int index)
 {
-    return esp_modem::dce_commands::generic_command(t, "AT+CMGD=" + std::to_string(index) + "\r", "OK", "ERROR", 5000);
+    auto ret = esp_modem::dce_commands::generic_command(t, "AT+CMGD=" + std::to_string(index) + "\r", "OK", "ERROR", 5000);
+    if (ret != esp_modem::command_result::OK)
+    {
+        ESP_LOGE(TAG, "delete sms failed, ret = %d", (int)ret);
+    }
+    ESP_LOGI(TAG, "delete sms ret = %d", (int)ret);
+    return ret;
 }
 
 /*! @copydoc SIM7670_gnss::delete_sms */
@@ -618,7 +634,7 @@ esp_modem::command_result DCE_gnss::set_auto_answer(int rings)
 esp_modem::command_result set_functionality_level_lib(esp_modem::CommandableIf *t, functionality_level_t level)
 {
     int level_int = static_cast<int>(level);
-    return esp_modem::dce_commands::generic_command(t, "AT+CFUN=" + std::to_string(level_int) + "\r", "OK", "ERROR", 5000);
+    return esp_modem::dce_commands::generic_command(t, "AT+CFUN=" + std::to_string(level_int) + ",0\r", "OK", "ERROR", 5000);
 }
 
 /*! @copydoc SIM7670_gnss::set_functionality_level */
@@ -633,23 +649,23 @@ esp_modem::command_result DCE_gnss::set_functionality_level(functionality_level_
     return device->set_functionality_level(level);
 }
 
-esp_modem::command_result enable_sleep_mode_lib(esp_modem::CommandableIf *t, bool enable)
+esp_modem::command_result enable_terminal_sleep_mode_lib(esp_modem::CommandableIf *t, bool enable)
 {
     modem_is_in_sleep_mode = enable;
     int mode = enable ? 1 : 0;
     return esp_modem::dce_commands::generic_command(t, "AT+CSCLK=" + std::to_string(mode) + "\r", "OK", "ERROR", 1000);
 }
 
-/*! @copydoc SIM7670_gnss::enable_sleep_mode */
-esp_modem::command_result SIM7670_gnss::enable_sleep_mode(bool enable)
+/*! @copydoc SIM7670_gnss::enable_terminal_sleep_mode */
+esp_modem::command_result SIM7670_gnss::enable_terminal_sleep_mode(bool enable)
 {
-    return enable_sleep_mode_lib(dte.get(), enable);
+    return enable_terminal_sleep_mode_lib(dte.get(), enable);
 }
 
-/*! @copydoc DCE_gnss::enable_sleep_mode */
-esp_modem::command_result DCE_gnss::enable_sleep_mode(bool enable)
+/*! @copydoc DCE_gnss::enable_terminal_sleep_mode */
+esp_modem::command_result DCE_gnss::enable_terminal_sleep_mode(bool enable)
 {
-    return device->enable_sleep_mode(enable);
+    return device->enable_terminal_sleep_mode(enable);
 }
 
 esp_modem::command_result power_down_lib(esp_modem::CommandableIf *t)
@@ -727,7 +743,13 @@ esp_modem::command_result DCE_gnss::wake_via_dtr(bool wake)
 esp_modem::command_result get_network_time_lib(esp_modem::CommandableIf *t, struct tm &time)
 {
     std::string str_out;
-    auto ret = esp_modem::dce_commands::generic_get_string(t, "AT+CCLK?\r", str_out);
+    auto ret = esp_modem::dce_commands::generic_get_string(t, "AT+CTZU=1\r", str_out, 5000);
+    if (ret != esp_modem::command_result::OK)
+    {
+        return ret;
+    }
+
+    ret = esp_modem::dce_commands::generic_get_string(t, "AT+CCLK?\r", str_out, 5000);
     if (ret != esp_modem::command_result::OK)
     {
         return ret;
@@ -749,55 +771,22 @@ esp_modem::command_result get_network_time_lib(esp_modem::CommandableIf *t, stru
     // Using sscanf for robust parsing of the fixed format
     int fields = sscanf(out.data(), "%d/%d/%d,%d:%d:%d%c%d",
                         &year, &month, &day, &hour, &minute, &second, &tz_sign, &tz_offset_quarters);
-
+    ESP_LOGI(TAG, "time from modem is %s", out.data());
+    if (year < 25 || year > 35)
+    { // Timezone might not be present
+        return esp_modem::command_result::FAIL;
+    }
     if (fields < 7)
     { // Timezone might not be present
         return esp_modem::command_result::FAIL;
     }
-
     // Populate struct tm
-    time.tm_year = year + 2000 - 1900; // tm_year is years since 1900
-    time.tm_mon = month - 1;           // tm_mon is 0-11
+    time.tm_year = year + 2000; // tm_year is years since 1900
+    time.tm_mon = month;        // tm_mon is 0-11
     time.tm_mday = day;
     time.tm_hour = hour;
     time.tm_min = minute;
     time.tm_sec = second;
-
-    // If timezone is present, adjust to UTC
-    if (fields == 8)
-    {
-        int tz_offset_minutes = tz_offset_quarters * 15;
-        if (tz_sign == '-')
-        {
-            time.tm_hour += tz_offset_minutes / 60;
-            time.tm_min += tz_offset_minutes % 60;
-        }
-        else
-        {
-            time.tm_hour -= tz_offset_minutes / 60;
-            time.tm_min -= tz_offset_minutes % 60;
-        }
-    }
-
-    // mktime will normalize the struct tm fields (e.g., handle negative minutes)
-    // We need to temporarily unset the timezone to get a pure UTC time_t
-    char *original_tz = getenv("TZ");
-    setenv("TZ", "", 1);
-    tzset();
-    time_t utc_time = mktime(&time);
-    if (original_tz)
-    {
-        setenv("TZ", original_tz, 1);
-    }
-    else
-    {
-        unsetenv("TZ");
-    }
-    tzset();
-
-    // Update the struct tm to the normalized UTC values
-    gmtime_r(&utc_time, &time);
-
     return esp_modem::command_result::OK;
 }
 
@@ -811,34 +800,6 @@ esp_modem::command_result SIM7670_gnss::get_network_time(struct tm &time)
 esp_modem::command_result DCE_gnss::get_network_time(struct tm &time)
 {
     return device->get_network_time(time);
-}
-
-/*! @copydoc SIM7670_gnss::sync_system_time */
-bool SIM7670_gnss::sync_system_time(const std::string &timezone_posix)
-{
-    struct tm timeinfo = {0};
-    if (get_network_time(timeinfo) != esp_modem::command_result::OK)
-    {
-        ESP_LOGE(TAG, "Failed to get network time from modem");
-        return false;
-    }
-
-    time_t utc_time = mktime(&timeinfo);
-    struct timeval tv = {};
-    tv.tv_sec = utc_time;
-    settimeofday(&tv, NULL);
-
-    setenv("TZ", timezone_posix.c_str(), 1);
-    tzset();
-
-    ESP_LOGI(TAG, "System time synced from modem. Timezone set to: %s", timezone_posix.c_str());
-    return true;
-}
-
-/*! @copydoc DCE_gnss::sync_system_time */
-bool DCE_gnss::sync_system_time(const std::string &timezone_posix)
-{
-    return device->sync_system_time(timezone_posix);
 }
 
 esp_modem::command_result set_ring_indicator_mode_lib(esp_modem::CommandableIf *t, ring_indicator_mode_t mode)

@@ -10,6 +10,8 @@
  */
 #pragma once
 #include <stdint.h>
+
 void light_sleep(uint16_t seconds);
 void set_ota_valid(bool valid);
 bool check_rollback();
+bool GetsystemTimeSynced();
