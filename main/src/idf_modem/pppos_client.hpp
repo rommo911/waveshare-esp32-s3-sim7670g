@@ -16,7 +16,7 @@
 #include "cxx_include/esp_modem_api.hpp"
 #include "SIM7670_gnss.hpp"
 #include "pins.hpp"
-// #include "main.hpp"
+#include <sys/time.h>
 
 using namespace esp_modem;
 

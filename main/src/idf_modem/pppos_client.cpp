@@ -15,7 +15,6 @@
 #include "esp_log.h"
 #include "esp_event.h"
 #include "power/power.hpp"
-#include <sys/time.h>
 #include "driver/rtc_io.h"
 #include <thread>
 
@@ -225,7 +224,6 @@ bool ModemSim7670::GetNetworkTime(uint8_t timeout_seconds, struct tm &timeinfo)
     {
         return false;
     }
-    struct tm timeinfo;
     // check if system time is synced
     esp_modem::command_result res = esp_modem::command_result::FAIL;
     auto now = millis();
