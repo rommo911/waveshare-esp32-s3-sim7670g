@@ -45,14 +45,6 @@ void StartWifi()
 {
   if (wifiOn == false)
   {
-    if (power::isPowerVBUSOn())
-    {
-      setCpuFrequencyMhz(160);
-    }
-    else
-    {
-      setCpuFrequencyMhz(80);
-    }
     SetupArduinoOTA();
     setUpWifiOTA(NULL);
   }
@@ -254,7 +246,6 @@ void SetupArduinoOTA()
 
 bool setupWifiSTA()
 {
-
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, pass);
   uint32_t counter = 0;

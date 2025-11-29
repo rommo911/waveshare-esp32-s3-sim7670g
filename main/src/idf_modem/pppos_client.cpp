@@ -41,13 +41,14 @@ public:
     {
         if (isinit)
             return;
+        esp_event_loop_create_default();
         esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, on_event, this);
         isinit = true;
     }
 
     esp_err_t wait_for(decltype(IP_Event) event, int milliseconds)
     {
-        return signal.wait_any(event, milliseconds);
+        return signal.wait_any(event, milliseconds) == true ? ESP_OK : ESP_ERR_TIMEOUT;
     }
 
     ip_event_t get_ip_event_type()
@@ -122,8 +123,9 @@ bool ModemSim7670::init()
     pinMode(BOARD_MODEM_RI_PIN, INPUT_PULLUP);
     auto now = millis();
     esp_event_loop_create_default();
-    esp_netif_init();
+    esp_err_t esp_err = esp_netif_init();
     dte_config = ESP_MODEM_DTE_DEFAULT_CONFIG();
+    dte_config.uart_config.baud_rate = 460800;
     dte_config.uart_config.tx_io_num = BOARD_MODEM_RXD_PIN;
     dte_config.uart_config.rx_io_num = BOARD_MODEM_TXD_PIN;
     dte_config.uart_config.rts_io_num = -1;
@@ -133,6 +135,7 @@ bool ModemSim7670::init()
     assert(dte);
     netif_ppp_config = ESP_NETIF_DEFAULT_PPP();
     esp_netif = esp_netif_new(&netif_ppp_config);
+    // esp_netif_set_hostname(esp_netif, "pppmodem_");
     assert(esp_netif);
     dce_config = ESP_MODEM_DCE_DEFAULT_CONFIG("free");
     dce = create_SIM7670_GNSS_dce(&dce_config, dte, esp_netif);
@@ -145,15 +148,13 @@ bool ModemSim7670::init()
         ESP_LOGI(TAG, "modem init wait ..");
         delay(5000);
     }
-    if (SleepMODE == SLEEP || SleepMODE == INTERRUPT_READY)
-    {
-        ESP_LOGI(TAG, "modem init wake DTR ..");
-        dce->wake_via_dtr(true);
-        dce->enable_terminal_sleep_mode(false);
-    }
+    dce->wake_via_dtr(true);
+    dce->enable_terminal_sleep_mode(false);
     uint32_t timeout = 7 * 1000U;
     SleepMODE = ON;
     ESP_LOGI(TAG, "modem waitin for terminal ..");
+    now = millis();
+    dce->set_mode(esp_modem::modem_mode::COMMAND_MODE);
     while (dce->sync() != command_result::OK && millis() - now < timeout)
     {
         delay(200);
@@ -161,6 +162,7 @@ bool ModemSim7670::init()
     if (dce->sync() != command_result::OK)
     {
         ESP_LOGE(TAG, "Cannot sync modem");
+        this->shutdown();
         return false;
     }
     ESP_LOGI(TAG, "modem terminal ready.");
@@ -172,7 +174,7 @@ bool ModemSim7670::init()
         if (!pin_ok && dce->set_pin("5461") != command_result::OK)
         {
             ESP_LOGE(TAG, "Cannot set PIN!");
-            sleep(SleepMode_t::SLEEP);
+            this->shutdown();
             return false;
         }
     }
@@ -200,7 +202,7 @@ bool ModemSim7670::init()
     if (dce->get_operator_name(str) != esp_modem::command_result::OK)
     {
         ESP_LOGE(TAG, "Cannot get operator name!");
-        sleep(SleepMode_t::SLEEP);
+        this->shutdown();
         return false;
     }
     end = millis();
@@ -217,13 +219,14 @@ bool ModemSim7670::init()
     return true;
 }
 
-bool ModemSim7670::SyncModemTimeToSystem(uint8_t timeout_seconds)
+bool ModemSim7670::GetNetworkTime(uint8_t timeout_seconds, struct tm &timeinfo)
 {
-    if (!initialized)
+    if (!dce || !initialized)
     {
         return false;
     }
     struct tm timeinfo;
+    // check if system time is synced
     esp_modem::command_result res = esp_modem::command_result::FAIL;
     auto now = millis();
     while (res != esp_modem::command_result::OK && ((millis() - now) < (timeout_seconds * 1000)))
@@ -235,15 +238,7 @@ bool ModemSim7670::SyncModemTimeToSystem(uint8_t timeout_seconds)
     {
         return false;
     }
-    struct timeval tv;
-    tv.tv_sec = mktime(&timeinfo);
-    tv.tv_usec = 0;
-    settimeofday(&tv, NULL);
-    // LOG TIME
-    char strftime_buf[64];
-    strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-    ESP_LOGI(TAG, "The current date/time is: %s", strftime_buf);
-    return false;
+    return true;
 }
 
 std::unique_ptr<DCE_gnss> &ModemSim7670::GetDce()
@@ -275,6 +270,10 @@ bool ModemSim7670::EnableGnss(bool enable)
 
 bool ModemSim7670::get_gnss(sim76xx_gps_t &gps, uint16_t timeout_seconds)
 {
+    if (!dce || !initialized)
+    {
+        return false;
+    }
     auto now = millis();
     while (dce->get_gnss_information_sim76xx(gps) != esp_modem::command_result::OK && ((millis() - now) < (timeout_seconds * 1000)))
     {
@@ -313,10 +312,14 @@ bool ModemSim7670::get_gnss(sim76xx_gps_t &gps, uint16_t timeout_seconds)
 
 bool ModemSim7670::shutdown()
 {
-    if (!initialized)
+    if (!dce)
     {
+        pinMode(BOARD_MODEM_PWR_PIN, OUTPUT);
+        digitalWrite(BOARD_MODEM_PWR_PIN, LOW);
         return false;
     }
+    this->sleep(SleepMode_t::SLEEP); // set CFUN = 0 to sign off network
+    delay(250);
     dce.reset();
     if (esp_netif)
     {
@@ -332,14 +335,12 @@ bool ModemSim7670::shutdown()
 
 bool ModemSim7670::sleep(SleepMode_t mode)
 {
-    if (!dce)
+    if (!dce || !initialized)
     {
         return false;
     }
-    // pinMode(BOARD_MODEM_PWR_PIN, OUTPUT);
-    // digitalWrite(BOARD_MODEM_PWR_PIN, HIGH);
     SleepMODE = mode;
-    EnableGnss(false);
+    this->EnableGnss(false);
     switch (mode)
     {
     case SLEEP:
@@ -406,43 +407,47 @@ bool ModemSim7670::isInitialized()
 
 bool ModemSim7670::connectToInternet()
 {
-    if (initialized)
+    if (!dce || !initialized)
     {
-        GetEventHandler().begin();
-        if (dce->set_mode(esp_modem::modem_mode::CMUX_MODE))
+        return false;
+    }
+    this->GetEventHandler().begin();
+    if (dce->set_mode(esp_modem::modem_mode::DATA_MODE))
+    {
+        ESP_LOGI(TAG, "Modem has correctly entered multiplexed command/data mode");
+        auto ret = GetEventHandler().wait_for(StatusHandler::IP_Event, 60000);
+        if (ret != ESP_OK)
         {
-            ESP_LOGI(TAG, "Modem has correctly entered multiplexed command/data mode");
-            if (GetEventHandler().wait_for(StatusHandler::IP_Event, 60000))
-            {
-                ESP_LOGE(TAG, "Cannot get IP within specified timeout... exiting");
-            }
-            ESP_LOGI(TAG, "Modem hs connected");
-            return true;
-        }
-        else
-        {
-            ESP_LOGE(TAG, "Failed to configure multiplexed command mode... exiting");
-            //sleep(SleepMode_t::SLEEP);
+            ESP_LOGE(TAG, "Cannot get IP within specified timeout... exiting, ret = %s", esp_err_to_name(ret));
             return false;
         }
+        ESP_LOGI(TAG, "Modem data connected");
+        return true;
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Failed to configure multiplexed command mode... exiting");
+        // sleep(SleepMode_t::SLEEP);
+        return false;
     }
     return false;
 }
 
 bool ModemSim7670::disconnectInternet()
 {
-    if (initialized)
+    if (!dce || !initialized)
     {
-        if (dce->set_mode(esp_modem::modem_mode::COMMAND_MODE))
-        {
-            std::cout << "Modem has correctly entered command mode" << std::endl;
-            return true;
-        }
-        else
-        {
-            ESP_LOGE(TAG, "Failed to configure command mode");
-            return false;
-        }
+        return false;
+    }
+    if (dce->set_mode(esp_modem::modem_mode::COMMAND_MODE))
+    {
+        std::cout << "Modem has correctly entered command mode" << std::endl;
+        return true;
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Failed to configure command mode");
+        return false;
     }
     return false;
 }

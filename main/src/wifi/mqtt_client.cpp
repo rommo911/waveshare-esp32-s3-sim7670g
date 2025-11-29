@@ -14,16 +14,19 @@
 #include "esp_log.h"
 #include "Preferences.h"
 #include "nvs_flash.h"
-
+#include "esp_crt_bundle.h"
+#include "esp_tls.h"
 /**
  * Reference to the MQTT event base
  */
 ESP_EVENT_DECLARE_BASE(MQTT_EVENTS);
+extern const uint8_t isrgrootx1_pem_start[] asm("_binary_isrgrootx1_pem_start");
+extern const uint8_t isrgrootx1_pem_end[] asm("_binary_isrgrootx1_pem_end");
 
-String esp_mqtt_server = "mqtts://ramipi92.duckdns.org";
-uint32_t esp_mqtt_port = 8433;
-String esp_mqtt_user = "rami";
-String esp_mqtt_pass = "Rr0033141500!";
+static String esp_mqtt_server = "mqtts://ramihass.ddnsfree.com";
+static uint32_t esp_mqtt_port = 8443;
+static String esp_mqtt_user = "rami";
+static String esp_mqtt_pass = "Rr0033141500!";
 bool check_nvs_storage()
 {
     bool ret = true;
@@ -32,7 +35,7 @@ bool check_nvs_storage()
     if (ret)
     {
         esp_mqtt_server = pref.getString("mqtt_server", esp_mqtt_server);
-       esp_mqtt_port = pref.getUInt("mqtt_port", esp_mqtt_port);
+        esp_mqtt_port = pref.getUInt("mqtt_port", esp_mqtt_port);
         esp_mqtt_user = pref.getString("mqtt_user", esp_mqtt_user);
         esp_mqtt_pass = pref.getString("mqtt_pass", esp_mqtt_pass);
     }
@@ -46,22 +49,27 @@ struct MqttClientHandle
     MqttClientHandle()
     {
         check_nvs_storage();
+
         esp_mqtt_client_config_t config = {};
-        config.broker.address.uri = esp_mqtt_server.c_str(),
-        config.broker.address.port = esp_mqtt_port,
-        config.credentials.username = esp_mqtt_user.c_str(),
-        config.credentials.authentication.password = esp_mqtt_pass.c_str(),
-        config.broker.verification.skip_cert_common_name_check = true,
+        // config.broker.verification.
+        config.broker.address.uri = esp_mqtt_server.c_str();
+        config.broker.address.port = esp_mqtt_port;
+        config.credentials.username = esp_mqtt_user.c_str();
+        config.credentials.client_id = "RAMI SIM7670";
+        config.credentials.authentication.password = esp_mqtt_pass.c_str();
+        config.broker.verification.crt_bundle_attach = esp_crt_bundle_attach;
+        // config.broker.verification.skip_cert_common_name_check = true;
+        config.broker.verification.certificate = (const char *)isrgrootx1_pem_start;
+        // config.broker.verification.certificate_len = isrgrootx1_pem_start -  isrgrootx1_pem_end;
         client = esp_mqtt_client_init(&config);
         if (!client)
         {
-            ESP_LOGE("mqttcpp", "Failed to initialize MQTT client");
+            ESP_LOGE("MqttClientHandle", "Failed to initialize MQTT client");
         }
     }
 
     ~MqttClientHandle()
     {
-        esp_mqtt_client_destroy(client);
     }
 
     esp_mqtt_client_handle_t client;
@@ -70,17 +78,34 @@ struct MqttClientHandle
 /**
  * @brief Definitions of MqttClient methods
  */
-MqttClient::MqttClient() : h(std::unique_ptr<MqttClientHandle>(new MqttClientHandle()))
+MqttClient::MqttClient()
 {
+}
+esp_err_t MqttClient::begin()
+{
+    h = (std::unique_ptr<MqttClientHandle>(new MqttClientHandle()));
+    esp_event_loop_create_default();
     esp_mqtt_client_register_event(h->client, MQTT_EVENT_ANY, MqttClient::handle_event, this);
+    return connect();
 }
 
-void MqttClient::connect()
+esp_err_t MqttClient::connect()
 {
     if (h->client != nullptr)
-        esp_mqtt_client_start(h->client);
+    {
+        // log all params of connection
+        ESP_LOGI("TAG", "connecting to %s:%d , user %s, pass %s  ", esp_mqtt_server.c_str(), esp_mqtt_port, esp_mqtt_user.c_str(), esp_mqtt_pass.c_str());
+        return esp_mqtt_client_start(h->client);
+    }
+    return ESP_ERR_INVALID_STATE;
 }
 
+void MqttClient::disconnect()
+{
+    if (h->client != nullptr)
+        esp_mqtt_client_disconnect(h->client);
+    ESP_LOGI("TAG", "clien disconnect");
+}
 
 bool MqttClient::isConnected()
 {

@@ -65,7 +65,7 @@ public:
 
     bool disconnectInternet();
 
-    bool SyncModemTimeToSystem(uint8_t timeout_seconds);
+    bool GetNetworkTime(uint8_t timeout_seconds, struct tm &timeinfo);
 
     bool sleep(SleepMode_t mode);
 

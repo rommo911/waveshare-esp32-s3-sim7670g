@@ -693,7 +693,7 @@ esp_modem::command_result SIM7670_gnss::set_dtr_pin(int gpio_num)
     {
         gpio_set_direction((gpio_num_t)dtr_pin, GPIO_MODE_OUTPUT);
         // Set DTR high by default to allow sleep
-        gpio_set_level((gpio_num_t)dtr_pin, 1);
+        gpio_set_level((gpio_num_t)dtr_pin, 0);
     }
     return esp_modem::command_result::OK;
 }

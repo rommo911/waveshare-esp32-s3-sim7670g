@@ -23,6 +23,7 @@
 #include "pppos_client.hpp"
 #include "system.hpp"
 #include "CarBattery/CarBattery.hpp"
+#include "wifi/mqtt_client.hpp"
 
 bool simulatedMotionTrigger = false;
 bool simulatedLowPowerTrigger = false;
@@ -99,7 +100,7 @@ void handleWakeup()
                     motionOngoing = true;
                     modem.init();
                     modem.sendSMS("0758829590", "Motion detected!");
-                    modem.sleep(ModemSim7670::SleepMode_t::INTERRUPT_READY);
+                    modem.shutdown();
                 }
                 power::Sleep_EnableTimer(power::AFTER_MOTION, getNoMotionTimeout());
                 power::Sleep_EnablePinWakeup(power::WakeUpPin_t::MOTION_PIN);
@@ -118,9 +119,9 @@ void handleWakeup()
             {
             case power::SLEEP_SNAP_SHOT:
             {
-                builtinLed.setFade(0, LedStrip::_rgb(50, 50, 50), 0, 500, 0, 5000);
+                builtinLed.setFade(0, LedStrip::_rgb(50, 50, 50), 0, 1000, 2);
                 mqttLogger.println("wake FROM Timer for snapshot...");
-                delay(5000);
+                delay(2500);
                 break;
             }
             case power::AFTER_MOTION:
@@ -134,9 +135,13 @@ void handleWakeup()
                 {
                     // here try wakeup modem and send SMS
                     modem.init();
-                    auto sms = std::string("motion detection done, counter=") + std::to_string(motionCounter) + std::string(". sleeping.");
+                    std::stringstream ss;
+                    ss << std::fixed << std::setprecision(1);
+                    ss << ("motion detection done, counter=") << (motionCounter) << (". batt:") << (power::getCellPercent()) << ("%, v=") << power::getCellVoltage();
+                    const std::string &sms = ss.str();
+                    mqttLogger.println(sms.c_str());
                     modem.sendSMS("0758829590", sms.c_str());
-                    modem.sleep(ModemSim7670::SleepMode_t::SLEEP);
+                    modem.shutdown();
                 }
                 break;
             }
@@ -146,10 +151,12 @@ void handleWakeup()
             }
             }
             turnOffCamera();
+
             if (power::isBatLowLevel())
                 builtinLed.setSolid(0, LedStrip::_rgb(2, 0, 0)); // turn off led before sleep
             else
                 builtinLed.setSolid(0, LedStrip::_rgb(0, 0, 2)); // turn off led before sleep
+            delay(50);
             power::Sleep_EnableTimer(power::SLEEP_SNAP_SHOT, getSnapShotTime());
             power::Sleep_EnablePinWakeup(power::WakeUpPin_t::MOTION_PIN);
             // power::Sleep_EnablePinWakeup(power::WakeUpPin_t::START_PIN);
@@ -229,7 +236,12 @@ void setup()
         delay(5000);
         builtinLed.clear(0);
         delay(50);
-        /// ESP.restart();
+        if (power::isBatLowLevel())
+        {
+            power::Sleep_EnablePinWakeup(power::WakeUpPin_t::START_PIN);
+            power::DeepSleep();
+        }
+        ESP.restart();
     }
     if (power::isPowerVBUSOn())
     {

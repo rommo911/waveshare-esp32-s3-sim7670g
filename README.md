@@ -90,3 +90,15 @@ The firmware is built on the Arduino framework for ESP32. The codebase is modula
     - Navigate to the device's IP address (usually 192.168.4.1) in a web browser.
     - Use the web interface to configure your WiFi credentials, MQTT broker details, and other settings.
 3.  **Build and Upload:** Use ESP IDF to build and upload the firmware to the board.
+
+
+#static const size_t dte_default_buffer_size = 8192;
+
+
+esp_log_level_set("*", ESP_LOG_INFO);
+esp_log_level_set("esp-tls", ESP_LOG_VERBOSE);
+esp_log_level_set("mqtt_client", ESP_LOG_VERBOSE);
+esp_log_level_set("mqtt_example", ESP_LOG_VERBOSE);
+esp_log_level_set("transport_base", ESP_LOG_VERBOSE);
+esp_log_level_set("transport", ESP_LOG_VERBOSE);
+esp_log_level_set("outbox", ESP_LOG_VERBOSE);

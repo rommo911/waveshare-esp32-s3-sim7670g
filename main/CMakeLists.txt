@@ -23,7 +23,9 @@ idf_component_register(SRC_DIRS
                                 "./src/idf_modem"
                                 "./src"
                     PRIV_REQUIRES esp_wifi esp_http_client app_update nvs_flash esp_driver_gpio esp_netif SIM7670_gnss
-                    REQUIRES arduino-esp32 mqtt )
+                    REQUIRES arduino-esp32 mqtt mbedtls
+                    EMBED_TXTFILES src/ssl/isrgrootx1.pem
+                    )
+                   
                     
-                    
-littlefs_create_partition_image(storage ../data FLASH_IN_PROJECT)
+#littlefs_create_partition_image(storage ../data FLASH_IN_PROJECT)

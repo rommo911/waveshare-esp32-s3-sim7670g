@@ -24,11 +24,14 @@ class MqttClient
 public:
     MqttClient();
     ~MqttClient();
+    esp_err_t begin();
 
     /**
      * @brief Start the mqtt-client
      */
-    void connect();
+    esp_err_t connect();
+
+    void disconnect();
 
     bool isConnected();
     /**

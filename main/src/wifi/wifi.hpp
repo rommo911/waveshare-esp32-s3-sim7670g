@@ -7,3 +7,4 @@ extern PubSubClient mqttclient;
 void StartWifi();
 bool GetWifiOn();
 void StopWifi();
+bool syncntpTime();
